@@ -1,32 +1,40 @@
 @echo off
+chcp 65001 > /dev/null
 title JOSINODJ - Desinstalador
 
-net session >nul 2>&1
+net session >/dev/null 2>&1
 if errorlevel 1 (
     powershell -Command "Start-Process '%~f0' -Verb RunAs"
     exit /b
 )
 
 echo.
-echo  Desinstalando JOSINODJ...
+echo  ============================
+echo    Desinstalando JOSINODJ...
+echo  ============================
 echo.
 
+taskkill /IM JOSINODJ.exe /F >/dev/null 2>&1
+
 set "DEST=%ProgramFiles%\JOSINODJ"
+if exist "%DEST%" (
+    echo  Eliminando archivos...
+    rd /s /q "%DEST%"
+)
 
-:: Borrar accesos directos
-del /f /q "%Public%\Desktop\JOSINODJ.lnk" >nul 2>&1
-del /f /q "%USERPROFILE%\Desktop\JOSINODJ.lnk" >nul 2>&1
-rmdir /s /q "%ProgramData%\Microsoft\Windows\Start Menu\Programs\JOSINODJ" >nul 2>&1
+powershell -NoProfile -Command "Remove-Item ([Environment]::GetFolderPath('CommonDesktopDirectory') + '\JOSINODJ.lnk') -Force -ErrorAction SilentlyContinue"
 
-:: Limpiar registro
-reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\JOSINODJ" /f >nul 2>&1
+set "START_MENU=%ProgramData%\Microsoft\Windows\Start Menu\Programs\JOSINODJ"
+if exist "%START_MENU%" rd /s /q "%START_MENU%"
 
-:: Borrar archivos de configuración del usuario
-rmdir /s /q "%USERPROFILE%\.josinodj" >nul 2>&1
+reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\JOSINODJ" /f >/dev/null 2>&1
 
-:: Borrar carpeta de instalación
-timeout /t 2 /nobreak >nul
-rmdir /s /q "%DEST%" >nul 2>&1
-
-echo  JOSINODJ desinstalado correctamente.
+echo.
+echo  ============================
+echo    Desinstalacion completada
+echo  ============================
+echo.
+echo  JOSINODJ desinstalado. Tus listas y ajustes en %USERPROFILE%\.josinodj\ no han sido eliminados.
+echo.
 pause
+exit /b 0
