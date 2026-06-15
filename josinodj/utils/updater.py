@@ -41,6 +41,8 @@ def check_and_update(parent_widget=None) -> bool:
     Devuelve True si se aplicó una actualización (la app debe reiniciarse).
     Devuelve False si no hay nada nuevo o no hay conexión.
     """
+    if not getattr(sys, 'frozen', False):
+        return False  # En dev no se actualiza
     try:
         req = urllib.request.Request(API_URL, headers={'User-Agent': 'JOSINODJ-updater'})
         with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
