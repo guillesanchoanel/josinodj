@@ -11,20 +11,15 @@ import urllib.request
 import urllib.error
 import json
 
-GITHUB_REPO   = 'guillesanchoanel/josinodj'
-VERSION_FILE  = os.path.join(os.path.dirname(__file__), '..', '..', 'version.txt')
-API_URL       = f'https://api.github.com/repos/{GITHUB_REPO}/releases/latest'
-TIMEOUT       = 6   # segundos
+GITHUB_REPO = 'guillesanchoanel/josinodj'
+API_URL     = f'https://api.github.com/repos/{GITHUB_REPO}/releases/latest'
+TIMEOUT     = 6
 
 
 def _local_version() -> str:
     try:
-        if getattr(sys, 'frozen', False):
-            path = os.path.join(os.path.dirname(sys.executable), 'version.txt')
-        else:
-            path = VERSION_FILE
-        with open(path, 'r') as f:
-            return f.read().strip()
+        from josinodj.utils._version import VERSION
+        return VERSION
     except Exception:
         return '0.0.0'
 

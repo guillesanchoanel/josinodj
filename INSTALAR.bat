@@ -12,7 +12,7 @@ if errorlevel 1 (
 
 set "SRC=%~dp0"
 set "DEST=%ProgramFiles%\JOSINODJ"
-set /p VERSION=<"%SRC%version.txt"
+set VERSION=2.0.5
 
 echo.
 echo  ============================
