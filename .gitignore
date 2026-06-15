@@ -26,6 +26,7 @@ env/
 
 # Binarios grandes externos
 assets/ffmpeg.exe
+*.zip
 
 # OS
 .DS_Store
