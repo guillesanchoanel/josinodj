@@ -2,15 +2,12 @@
 chcp 65001 > /dev/null
 title JOSINODJ - Desinstalador
 
-:: Sin /elevated: copiar a TEMP y relanzar como admin
-if /i "%~1" == "/elevated" goto :desinstalar
+net session > /dev/null 2>&1
+if errorlevel 1 (
+    powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    exit /b
+)
 
-copy /Y "%~f0" "%TEMP%\JOSINODJ_uninstall.bat" > /dev/null 2>&1
-powershell -Command "Start-Process 'cmd.exe' -ArgumentList '/c \"\"%TEMP%\JOSINODJ_uninstall.bat\"\" /elevated' -Verb RunAs -Wait"
-del /f /q "%TEMP%\JOSINODJ_uninstall.bat" > /dev/null 2>&1
-exit /b
-
-:desinstalar
 echo.
 echo  ============================
 echo    Desinstalando JOSINODJ...
@@ -18,6 +15,7 @@ echo  ============================
 echo.
 
 taskkill /IM JOSINODJ.exe /F > /dev/null 2>&1
+timeout /t 1 /nobreak > /dev/null
 
 set "DEST=%ProgramFiles%\JOSINODJ"
 if exist "%DEST%" (
@@ -37,7 +35,6 @@ echo  ============================
 echo    Desinstalacion completada
 echo  ============================
 echo.
-echo  JOSINODJ desinstalado correctamente.
 echo  Tus listas y ajustes en %USERPROFILE%\.josinodj\ NO han sido eliminados.
 echo.
 pause

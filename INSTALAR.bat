@@ -12,7 +12,7 @@ if errorlevel 1 (
 
 set "SRC=%~dp0"
 set "DEST=%ProgramFiles%\JOSINODJ"
-set VERSION=2.0.8
+set VERSION=2.0.9
 
 echo.
 echo  ============================
@@ -59,7 +59,7 @@ reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\JOSINODJ" /v "
 reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\JOSINODJ" /v "Publisher"        /t REG_SZ /d "JOSINODJ" /f >nul
 reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\JOSINODJ" /v "InstallLocation"  /t REG_SZ /d "%DEST%" /f >nul
 reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\JOSINODJ" /v "DisplayIcon"      /t REG_SZ /d "%DEST%\JOSINODJ.exe" /f >nul
-reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\JOSINODJ" /v "UninstallString"  /t REG_SZ /d "cmd.exe /c \"%DEST%\DESINSTALAR.bat\"" /f >nul
+reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\JOSINODJ" /v "UninstallString"  /t REG_SZ /d "C:\Windows\System32\cmd.exe /c \"\"%DEST%\DESINSTALAR.bat\"\"" /f >nul
 reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\JOSINODJ" /v "NoModify"         /t REG_DWORD /d 1 /f >nul
 reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\JOSINODJ" /v "NoRepair"         /t REG_DWORD /d 1 /f >nul
 
