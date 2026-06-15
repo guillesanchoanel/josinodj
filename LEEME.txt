@@ -1,0 +1,119 @@
+╔══════════════════════════════════════════════════════════════════╗
+║                        JOSINODJ  v1.0                           ║
+║                     Software de DJ personal                     ║
+╚══════════════════════════════════════════════════════════════════╝
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  INSTALACIÓN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  1. Haz doble clic en INSTALAR.bat
+  2. Acepta los permisos de administrador cuando Windows lo pida
+  3. El programa se instalará en:
+        C:\Program Files\JOSINODJ\
+  4. Se creará un acceso directo en el Escritorio y en el Menú Inicio
+  5. Al terminar, elige si quieres abrirlo ahora
+
+  ¡Listo! No necesitas instalar Python ni ninguna otra cosa.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  PRIMEROS PASOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  1. Panel izquierdo → pulsa "+ Carpeta" y elige tu carpeta de música
+  2. Las canciones de esa carpeta aparecerán debajo
+  3. Haz doble clic en una canción para añadirla a la lista
+     o pulsa "📂 Añadir todo" para cargar toda la carpeta de golpe
+  4. También puedes arrastrar canciones directamente a la lista
+  5. Pulsa ▶ para empezar a reproducir
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  FUNCIONES PRINCIPALES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ▶  Reproducción automática (AUTO)
+     Las canciones pasan una detrás de otra sin que tengas que hacer
+     nada. Actívalo/desactívalo con el botón ∞ del reproductor.
+
+  ↔  Crossfade
+     Mezcla suave entre canciones para que no haya cortes bruscos.
+     Ajusta los segundos con el deslizador ↔ (0 a 30 segundos).
+     La zona roja en la onda muestra dónde empieza el cruce.
+
+  ⇄  Modo aleatorio
+     Reproduce canciones al azar sin repetir las que ya han sonado.
+     Actívalo con el botón ⇄.
+
+  🔀  Normalización de volumen
+     Iguala automáticamente el volumen de todas las canciones para
+     que ninguna suene más alta o más baja que las demás.
+     Se activa por defecto. Configurable en ⚙ Ajustes → Audio.
+
+  💾  Guardar y cargar listas
+     Guarda tu lista actual con "💾 Guardar" (formato .jdj).
+     Cárgala en otra sesión con "📂 Abrir".
+
+  🔍  Buscador
+     Panel izquierdo: busca entre las pistas de la carpeta activa.
+     Lista principal: busca entre las canciones de tu lista actual.
+
+  ↑↓  Ordenar columnas
+     Haz clic en cualquier cabecera de columna (Título, BPM, etc.)
+     para ordenar ascendente. Vuelve a hacer clic para descendente.
+
+  A+ A−  Tamaño de texto
+     Aumenta o reduce el tamaño del texto de la lista con los
+     botones A+ y A− de la barra de herramientas de la lista.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  MODO BLOQUEO (ANTIBORRACHOS)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Pulsa el candado 🔓 de la barra superior para bloquear la pantalla.
+  Mientras está bloqueado:
+    - La música sigue sonando sola
+    - Nadie puede tocar la lista ni los ajustes
+    - No se puede cerrar el programa
+
+  Para desbloquear: toca la pantalla e introduce el PIN.
+  PIN por defecto: 0000
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  RECUPERACIÓN DE SESIÓN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  JOSINODJ guarda automáticamente tu sesión cada 30 segundos.
+  Si el programa se cierra de golpe (apagón, cuelgue, etc.),
+  al volver a abrirlo te preguntará si quieres restaurar la última
+  sesión con la lista y la posición donde estabas.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ATAJOS DE TECLADO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Espacio        Play / Pausa
+  →  (flecha)    Siguiente canción
+  ←  (flecha)    Canción anterior
+  F11            Pantalla completa / Ventana
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  FORMATOS COMPATIBLES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  MP3 · FLAC · WAV · OGG · M4A · AAC · WMA · OPUS
+
+  Si algún archivo no reproduce, instala FFmpeg (gratuito) y
+  añade su carpeta al PATH de Windows. Esto amplía la compatibilidad
+  a prácticamente cualquier formato de audio existente.
+  Descarga: https://ffmpeg.org/download.html
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  DESINSTALAR
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Panel de Control → Programas → JOSINODJ → Desinstalar
+  o ejecuta DESINSTALAR.bat como administrador.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                          ¡Disfruta la música!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

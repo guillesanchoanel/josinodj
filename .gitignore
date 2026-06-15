@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+
+# PyInstaller
+dist/
+build/
+*.spec.bak
+
+# Entornos virtuales
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*
+
+# Datos de usuario (no se comparten)
+~/.josinodj/
+
+# Binarios grandes externos
+assets/ffmpeg.exe
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
