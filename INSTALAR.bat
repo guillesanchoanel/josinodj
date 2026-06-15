@@ -12,6 +12,7 @@ if errorlevel 1 (
 
 set "SRC=%~dp0"
 set "DEST=%ProgramFiles%\JOSINODJ"
+set /p VERSION=<"%SRC%version.txt"
 
 echo.
 echo  ============================
@@ -54,7 +55,7 @@ powershell -NoProfile -Command ^
 :: Registrar en "Agregar o quitar programas"
 echo  Registrando en Windows...
 reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\JOSINODJ" /v "DisplayName"      /t REG_SZ /d "JOSINODJ" /f >nul
-reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\JOSINODJ" /v "DisplayVersion"   /t REG_SZ /d "1.0.0" /f >nul
+reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\JOSINODJ" /v "DisplayVersion"   /t REG_SZ /d "%VERSION%" /f >nul
 reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\JOSINODJ" /v "Publisher"        /t REG_SZ /d "JOSINODJ" /f >nul
 reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\JOSINODJ" /v "InstallLocation"  /t REG_SZ /d "%DEST%" /f >nul
 reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\JOSINODJ" /v "DisplayIcon"      /t REG_SZ /d "%DEST%\JOSINODJ.exe" /f >nul
@@ -72,7 +73,6 @@ echo  Acceso directo creado en el Escritorio
 echo  Disponible en el Menu Inicio
 echo.
 
-set /p LAUNCH="Abrir JOSINODJ ahora? (S/N): "
-if /i "%LAUNCH%"=="S" start "" "%DEST%\JOSINODJ.exe"
+start "" "%DEST%\JOSINODJ.exe"
 
 exit /b 0

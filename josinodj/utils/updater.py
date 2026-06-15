@@ -19,7 +19,11 @@ TIMEOUT       = 6   # segundos
 
 def _local_version() -> str:
     try:
-        with open(VERSION_FILE, 'r') as f:
+        if getattr(sys, 'frozen', False):
+            path = os.path.join(os.path.dirname(sys.executable), 'version.txt')
+        else:
+            path = VERSION_FILE
+        with open(path, 'r') as f:
             return f.read().strip()
     except Exception:
         return '0.0.0'
@@ -69,9 +73,11 @@ def check_and_update(parent_widget=None) -> bool:
         f'(tienes la <b>v{_local_version()}</b>)<br><br>'
         '¿Descargar e instalar ahora?'
     )
-    msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-    msg.setDefaultButton(QMessageBox.Yes)
-    if msg.exec() != QMessageBox.Yes:
+    btn_si = msg.addButton('Sí', QMessageBox.AcceptRole)
+    msg.addButton('No', QMessageBox.RejectRole)
+    msg.setDefaultButton(btn_si)
+    msg.exec()
+    if msg.clickedButton() != btn_si:
         return False
 
     # Descargar

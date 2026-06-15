@@ -1,22 +1,43 @@
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QLabel, QComboBox, QCheckBox, QGroupBox,
-    QPushButton,
+    QPushButton, QTextEdit,
 )
 from PySide6.QtCore import Qt
+
+
+CHANGELOG = {
+    '2.0.0': (
+        '- Control completo desde móvil vía WiFi\n'
+        '- Menú contextual con long-press en móvil\n'
+        '- Arrastrar y reordenar canciones desde móvil\n'
+        '- Siguiente canción visible en móvil\n'
+        '- Sistema de actualización automática\n'
+        '- QR para conectar móvil fácilmente'
+    ),
+    '1.0.0': (
+        '- Primera versión\n'
+        '- Reproducción con shuffle\n'
+        '- Marcado de canciones reproducidas\n'
+        '- Efectos de DJ (EQ, reverb, etc.)\n'
+        '- Modo bloqueo con PIN'
+    ),
+}
 
 
 class SettingsDialog(QDialog):
     def __init__(self, settings, engine, parent=None):
         super().__init__(parent)
         self.setWindowTitle('Ajustes — JOSINODJ')
-        self.setMinimumSize(440, 340)
+        self.setMinimumSize(480, 380)
         self._settings = settings
         self._engine   = engine
 
         layout = QVBoxLayout(self)
         tabs = QTabWidget()
-        tabs.addTab(self._make_audio_tab(), '🔊 Audio')
+        tabs.addTab(self._make_audio_tab(),    '🔊 Audio')
+        tabs.addTab(self._make_playback_tab(), '▶ Reproducción')
+        tabs.addTab(self._make_version_tab(),  'ℹ Versión')
         layout.addWidget(tabs)
 
         btns = QHBoxLayout()
@@ -87,6 +108,66 @@ class SettingsDialog(QDialog):
 
         layout.addStretch()
         return tab
+
+    # ── Versión ───────────────────────────────────────────────────────────
+
+    def _make_version_tab(self) -> QWidget:
+        from josinodj.utils.updater import _local_version
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        ver_grp = QGroupBox('Versión instalada')
+        ver_layout = QVBoxLayout(ver_grp)
+        ver_label = QLabel(f'<b>JOSINODJ v{_local_version()}</b>')
+        ver_label.setStyleSheet('font-size:15px;')
+        ver_layout.addWidget(ver_label)
+        layout.addWidget(ver_grp)
+
+        log_grp = QGroupBox('Historial de cambios')
+        log_layout = QVBoxLayout(log_grp)
+        log_text = QTextEdit()
+        log_text.setReadOnly(True)
+        log_text.setMaximumHeight(160)
+        lines = []
+        for ver, changes in CHANGELOG.items():
+            lines.append(f'v{ver}:\n{changes}')
+        log_text.setPlainText('\n\n'.join(lines))
+        log_layout.addWidget(log_text)
+        layout.addWidget(log_grp)
+
+        check_row = QHBoxLayout()
+        self._check_btn = QPushButton('🔍 Buscar actualizaciones')
+        self._check_btn.clicked.connect(self._check_updates)
+        self._update_status = QLabel('')
+        self._update_status.setStyleSheet('font-size:12px;')
+        check_row.addWidget(self._check_btn)
+        check_row.addWidget(self._update_status, 1)
+        layout.addLayout(check_row)
+
+        layout.addStretch()
+        return tab
+
+    def _check_updates(self):
+        self._check_btn.setEnabled(False)
+        self._update_status.setText('Comprobando...')
+        self._update_status.setStyleSheet('color:#555;')
+        try:
+            import urllib.request, json
+            from josinodj.utils.updater import _local_version, _parse, API_URL
+            req = urllib.request.Request(API_URL, headers={'User-Agent': 'JOSINODJ-updater'})
+            with urllib.request.urlopen(req, timeout=6) as r:
+                data = json.loads(r.read())
+            remote = data.get('tag_name', '').lstrip('v')
+            if _parse(remote) > _parse(_local_version()):
+                self._update_status.setText(f'✅ Nueva versión disponible: v{remote}')
+                self._update_status.setStyleSheet('color:green; font-size:12px;')
+            else:
+                self._update_status.setText('✓ Tienes la versión más reciente')
+                self._update_status.setStyleSheet('color:#555; font-size:12px;')
+        except Exception:
+            self._update_status.setText('⚠ Sin conexión o error al comprobar')
+            self._update_status.setStyleSheet('color:orange; font-size:12px;')
+        self._check_btn.setEnabled(True)
 
     # ── save ─────────────────────────────────────────────────────────────
 
