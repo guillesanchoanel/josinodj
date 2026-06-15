@@ -26,6 +26,14 @@ class _UpdateChecker(QThread):
 
 
 CHANGELOG = {
+    '2.1.0': (
+        '- Desinstalador completamente arreglado\n'
+        '- Ahora borra correctamente la carpeta de Program Files\n'
+        '- Elimina el acceso directo del escritorio al desinstalar\n'
+        '- Funciona desde Aplicaciones de Windows y desde DESINSTALAR.bat\n'
+        '- Tamaño del programa visible en Aplicaciones de Windows\n'
+        '- Corregido error "El sistema no puede encontrar la ruta especificada"'
+    ),
     '2.0.0': (
         '- Control completo desde móvil vía WiFi\n'
         '- Menú contextual con long-press en móvil\n'

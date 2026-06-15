@@ -12,7 +12,7 @@ if errorlevel 1 (
 
 set "SRC=%~dp0"
 set "DEST=%ProgramFiles%\JOSINODJ"
-set VERSION=2.0.9
+set VERSION=2.1.0
 
 echo.
 echo  ============================
@@ -62,6 +62,7 @@ reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\JOSINODJ" /v "
 reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\JOSINODJ" /v "UninstallString"  /t REG_SZ /d "C:\Windows\System32\cmd.exe /c \"\"%DEST%\DESINSTALAR.bat\"\"" /f >nul
 reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\JOSINODJ" /v "NoModify"         /t REG_DWORD /d 1 /f >nul
 reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\JOSINODJ" /v "NoRepair"         /t REG_DWORD /d 1 /f >nul
+for /f %%i in ('powershell -NoProfile -Command "(Get-ChildItem \"%DEST%\" -Recurse -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum / 1KB -as [int]"') do reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\JOSINODJ" /v "EstimatedSize" /t REG_DWORD /d %%i /f >nul
 
 echo.
 echo  ============================
