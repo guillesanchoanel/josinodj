@@ -91,25 +91,22 @@ def check_and_update(parent_widget=None) -> bool:
                              f'No se pudo descargar la actualización:\n{e}')
         return False
 
-    # Extraer al directorio de instalación
-    install_dir = _install_dir()
+    # Extraer a carpeta temporal (el exe está corriendo y sus DLLs están bloqueadas)
+    tmp_extract = tempfile.mkdtemp(prefix='josinodj_update_')
     try:
         with zipfile.ZipFile(tmp_zip, 'r') as z:
-            z.extractall(install_dir)
+            z.extractall(tmp_extract)
     except Exception as e:
         QMessageBox.critical(parent_widget, 'Error',
                              f'No se pudo extraer la actualización:\n{e}')
         return False
 
-    # Lanzar instalador si existe
-    installer = os.path.join(install_dir, 'INSTALAR.bat')
+    # Lanzar INSTALAR.bat desde la carpeta temporal — se ejecuta DESPUÉS de que el exe cierre
+    installer = os.path.join(tmp_extract, 'INSTALAR.bat')
     if os.path.exists(installer):
-        subprocess.Popen(['cmd', '/c', installer], cwd=install_dir,
+        subprocess.Popen(['cmd', '/c', installer], cwd=tmp_extract,
                          creationflags=subprocess.CREATE_NEW_CONSOLE)
 
-    QMessageBox.information(parent_widget, 'Actualización instalada',
-                            'La actualización se instaló correctamente.\n'
-                            'La aplicación se cerrará ahora.')
     return True
 
 
