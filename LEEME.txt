@@ -1,5 +1,5 @@
 ╔══════════════════════════════════════════════════════════════════╗
-║                        JOSINODJ  v1.0                           ║
+║                       JOSINODJ  v2.0.3                          ║
 ║                     Software de DJ personal                     ║
 ╚══════════════════════════════════════════════════════════════════╝
 
@@ -12,9 +12,21 @@
   3. El programa se instalará en:
         C:\Program Files\JOSINODJ\
   4. Se creará un acceso directo en el Escritorio y en el Menú Inicio
-  5. Al terminar, elige si quieres abrirlo ahora
+  5. El programa se abrirá automáticamente al terminar
 
   ¡Listo! No necesitas instalar Python ni ninguna otra cosa.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ACTUALIZACIONES AUTOMÁTICAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  JOSINODJ comprueba automáticamente si hay una versión nueva cada
+  vez que lo abres (requiere conexión a internet).
+  Si hay una actualización disponible, te lo preguntará y se
+  instalará sola sin que tengas que hacer nada más.
+
+  Puedes comprobar la versión instalada y buscar actualizaciones
+  manualmente desde ⚙ Ajustes → Versión.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   PRIMEROS PASOS
@@ -66,6 +78,34 @@
      botones A+ y A− de la barra de herramientas de la lista.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  CONTROL DESDE EL MÓVIL (WiFi)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Puedes controlar JOSINODJ desde tu móvil mediante una página web.
+
+  OPCIÓN A — Mismo WiFi:
+    El móvil y el PC están conectados a la misma red WiFi.
+    1. Pulsa el botón 📱 de la barra superior
+    2. Selecciona "Mismo WiFi"
+    3. Escanea el QR con la cámara del móvil
+    4. Se abrirá la página de control en el navegador
+
+  OPCIÓN B — Hotspot (sin WiFi, por ejemplo en un evento):
+    El PC crea su propia red WiFi a la que se conecta el móvil.
+    1. Pulsa el botón 📱 de la barra superior
+    2. Selecciona "Hotspot"
+    3. Activa el punto de acceso en Windows manualmente si no está ya
+    4. Conecta el móvil a la red JOSINODJ con la contraseña indicada
+    5. Escanea el segundo QR para abrir la página de control
+
+  Desde el móvil puedes:
+    - Ver la canción que está sonando y la siguiente
+    - Play / Pausa / Siguiente / Anterior
+    - Reordenar canciones arrastrando
+    - Mantener pulsado una canción para ver más opciones
+      (Reproducir a continuación, Mover arriba/abajo, Eliminar, etc.)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   MODO BLOQUEO (ANTIBORRACHOS)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -100,12 +140,8 @@
   FORMATOS COMPATIBLES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  MP3 · FLAC · WAV · OGG · M4A · AAC · WMA · OPUS
-
-  Si algún archivo no reproduce, instala FFmpeg (gratuito) y
-  añade su carpeta al PATH de Windows. Esto amplía la compatibilidad
-  a prácticamente cualquier formato de audio existente.
-  Descarga: https://ffmpeg.org/download.html
+  MP3 · FLAC · WAV · OGG · M4A · AAC · WMA · OPUS y muchos más.
+  FFmpeg viene incluido, no necesitas instalar nada extra.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   DESINSTALAR

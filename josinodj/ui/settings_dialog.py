@@ -3,7 +3,26 @@ from PySide6.QtWidgets import (
     QLabel, QComboBox, QCheckBox, QGroupBox,
     QPushButton, QTextEdit,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThread, Signal
+
+
+class _UpdateChecker(QThread):
+    result = Signal(str, str)  # (texto, color)
+
+    def run(self):
+        try:
+            import urllib.request, json
+            from josinodj.utils.updater import _local_version, _parse, API_URL
+            req = urllib.request.Request(API_URL, headers={'User-Agent': 'JOSINODJ-updater'})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                data = json.loads(r.read())
+            remote = data.get('tag_name', '').lstrip('v')
+            if _parse(remote) > _parse(_local_version()):
+                self.result.emit(f'✅ Nueva versión disponible: v{remote}', 'color:green; font-size:12px;')
+            else:
+                self.result.emit('✓ Tienes la versión más reciente', 'color:#555; font-size:12px;')
+        except Exception as e:
+            self.result.emit(f'⚠ Error: {e}', 'color:orange; font-size:12px;')
 
 
 CHANGELOG = {
@@ -35,9 +54,8 @@ class SettingsDialog(QDialog):
 
         layout = QVBoxLayout(self)
         tabs = QTabWidget()
-        tabs.addTab(self._make_audio_tab(),    '🔊 Audio')
-        tabs.addTab(self._make_playback_tab(), '▶ Reproducción')
-        tabs.addTab(self._make_version_tab(),  'ℹ Versión')
+        tabs.addTab(self._make_audio_tab(),   '🔊 Audio')
+        tabs.addTab(self._make_version_tab(), 'ℹ Versión')
         layout.addWidget(tabs)
 
         btns = QHBoxLayout()
@@ -150,23 +168,14 @@ class SettingsDialog(QDialog):
     def _check_updates(self):
         self._check_btn.setEnabled(False)
         self._update_status.setText('Comprobando...')
-        self._update_status.setStyleSheet('color:#555;')
-        try:
-            import urllib.request, json
-            from josinodj.utils.updater import _local_version, _parse, API_URL
-            req = urllib.request.Request(API_URL, headers={'User-Agent': 'JOSINODJ-updater'})
-            with urllib.request.urlopen(req, timeout=6) as r:
-                data = json.loads(r.read())
-            remote = data.get('tag_name', '').lstrip('v')
-            if _parse(remote) > _parse(_local_version()):
-                self._update_status.setText(f'✅ Nueva versión disponible: v{remote}')
-                self._update_status.setStyleSheet('color:green; font-size:12px;')
-            else:
-                self._update_status.setText('✓ Tienes la versión más reciente')
-                self._update_status.setStyleSheet('color:#555; font-size:12px;')
-        except Exception:
-            self._update_status.setText('⚠ Sin conexión o error al comprobar')
-            self._update_status.setStyleSheet('color:orange; font-size:12px;')
+        self._update_status.setStyleSheet('color:#555; font-size:12px;')
+        self._checker = _UpdateChecker()
+        self._checker.result.connect(self._on_check_result)
+        self._checker.start()
+
+    def _on_check_result(self, text, style):
+        self._update_status.setText(text)
+        self._update_status.setStyleSheet(style)
         self._check_btn.setEnabled(True)
 
     # ── save ─────────────────────────────────────────────────────────────
@@ -177,8 +186,6 @@ class SettingsDialog(QDialog):
         self._settings.set('master_device', dev)
         self._engine.set_master_device(dev)
 
-        self._settings.set('auto_play', self._auto_check.isChecked())
-        self._settings.set('shuffle',   self._shuf_check.isChecked())
         norm = self._norm_check.isChecked()
         self._settings.set('normalize', norm)
         self._engine.normalize = norm
