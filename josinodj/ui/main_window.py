@@ -1020,7 +1020,7 @@ class MainWindow(QMainWindow):
 
     def _try_unlock(self):
 
-        dlg = PinDialog(self)
+        dlg = PinDialog(self, settings=self._settings)
 
         if dlg.exec():
 
@@ -1534,7 +1534,7 @@ class MainWindow(QMainWindow):
 
         if self._locked:
 
-            dlg = PinDialog(self, 'Introduce el PIN para cerrar JOSINODJ')
+            dlg = PinDialog(self, 'Introduce el PIN para cerrar JOSINODJ', self._settings)
 
             if dlg.exec():
 

@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
     QLabel, QComboBox, QCheckBox, QGroupBox,
-    QPushButton, QTextEdit,
+    QPushButton, QTextEdit, QLineEdit, QMessageBox,
 )
 from PySide6.QtCore import Qt, QThread, Signal
 
@@ -26,11 +26,12 @@ class _UpdateChecker(QThread):
 
 
 CHANGELOG = {
-    '2.3.1': (
-        '- Arrastrar canciones desde la búsqueda a la lista\n'
+    '2.3.2': (
+        '- Arrastrar canciones desde la búsqueda directamente a la lista\n'
+        '- El numpad del PIN ahora acepta teclado (números, Backspace, Enter)\n'
         '- Corrección: cambiar canción durante crossfade actualiza audio y UI correctamente\n'
         '- Corrección: insertar canción en lista durante crossfade ya no confunde la pista actual\n'
-        '- Corrección: actualizaciones automáticas muestran progreso y aviso de UAC'
+        '- Corrección: actualizaciones automáticas muestran barra de progreso y aviso de UAC'
     ),
     '2.2.0': (
         '- Botón de Ayuda con guía completa del programa\n'
@@ -72,8 +73,9 @@ class SettingsDialog(QDialog):
 
         layout = QVBoxLayout(self)
         tabs = QTabWidget()
-        tabs.addTab(self._make_audio_tab(),   '🔊 Audio')
-        tabs.addTab(self._make_version_tab(), 'ℹ Versión')
+        tabs.addTab(self._make_audio_tab(),    '🔊 Audio')
+        # tabs.addTab(self._make_security_tab(), '🔒 Seguridad')  # TODO: habilitar en futuro
+        tabs.addTab(self._make_version_tab(),  'ℹ Versión')
         layout.addWidget(tabs)
 
         btns = QHBoxLayout()
@@ -145,6 +147,125 @@ class SettingsDialog(QDialog):
         layout.addStretch()
         return tab
 
+    # ── Seguridad ─────────────────────────────────────────────────────────
+
+    def _make_security_tab(self) -> QWidget:
+        from .pin_dialog import PinDialog, PinEntryDialog, _hash_pw
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        # ── PIN de bloqueo ────────────────────────────────────────────────
+        pin_grp = QGroupBox('PIN de bloqueo de pantalla')
+        pin_l = QVBoxLayout(pin_grp)
+        current_pin = self._settings.get('pin_code', '0000')
+        pin_info = QLabel(f'PIN actual: {"●" * len(current_pin)}  ({len(current_pin)} dígitos)  |  Por defecto: 0000')
+        pin_info.setStyleSheet('color:#666688; font-size:11px;')
+        pin_l.addWidget(pin_info)
+        btn_change_pin = QPushButton('Cambiar PIN…')
+        btn_change_pin.setFixedHeight(30)
+        btn_change_pin.clicked.connect(lambda: self._change_pin(pin_info))
+        pin_l.addWidget(btn_change_pin)
+        layout.addWidget(pin_grp)
+
+        # ── Contraseña maestra ────────────────────────────────────────────
+        master_grp = QGroupBox('Contraseña maestra (recuperación del PIN)')
+        master_l = QVBoxLayout(master_grp)
+
+        has_master = bool(self._settings.get('pin_master_hash', ''))
+        self._master_status = QLabel(
+            '✓ Contraseña maestra configurada' if has_master
+            else '⚠ Sin contraseña maestra — si olvidas el PIN no podrás recuperarlo')
+        self._master_status.setStyleSheet(
+            f'color:{"#44aa66" if has_master else "#aa8800"}; font-size:11px;')
+        master_l.addWidget(self._master_status)
+
+        note = QLabel(
+            'La contraseña maestra te permite resetear el PIN a 0000\n'
+            'desde el numpad de bloqueo si alguna vez lo olvidas.')
+        note.setWordWrap(True)
+        note.setStyleSheet('color:#555566; font-size:11px;')
+        master_l.addWidget(note)
+
+        btn_set_master = QPushButton('Establecer / Cambiar contraseña maestra…')
+        btn_set_master.setFixedHeight(30)
+        btn_set_master.clicked.connect(self._set_master_password)
+        master_l.addWidget(btn_set_master)
+
+        btn_clear_master = QPushButton('Quitar contraseña maestra')
+        btn_clear_master.setFixedHeight(30)
+        btn_clear_master.setStyleSheet('color:#aa4444;')
+        btn_clear_master.clicked.connect(self._clear_master_password)
+        master_l.addWidget(btn_clear_master)
+
+        layout.addWidget(master_grp)
+        layout.addStretch()
+        return tab
+
+    def _change_pin(self, pin_info_label=None):
+        from .pin_dialog import PinDialog, PinEntryDialog
+        # Paso 1: verificar PIN actual
+        dlg = PinDialog(self, 'Introduce el PIN actual para continuar', self._settings)
+        if not dlg.exec():
+            return
+        # Paso 2: nuevo PIN
+        dlg2 = PinEntryDialog(self, 'Introduce el nuevo PIN (4 dígitos)')
+        if not dlg2.exec():
+            return
+        new_pin = dlg2.pin_value
+        # Paso 3: confirmar nuevo PIN
+        dlg3 = PinEntryDialog(self, 'Confirma el nuevo PIN')
+        if not dlg3.exec():
+            return
+        if dlg3.pin_value != new_pin:
+            QMessageBox.warning(self, 'Error', 'Los PINs no coinciden. No se ha cambiado.')
+            return
+        self._settings.set('pin_code', new_pin)
+        if pin_info_label:
+            pin_info_label.setText(
+                f'PIN actual: {"●" * len(new_pin)}  ({len(new_pin)} dígitos)  |  Por defecto: 0000')
+        QMessageBox.information(self, 'PIN cambiado', 'El PIN se ha cambiado correctamente.')
+
+    def _set_master_password(self):
+        from .pin_dialog import _hash_pw
+        # Si ya hay contraseña maestra, pedir la actual primero
+        if self._settings.get('pin_master_hash', ''):
+            old_dlg = _MasterInputDialog(self, 'Introduce la contraseña maestra actual:')
+            if not old_dlg.exec():
+                return
+            from .pin_dialog import _hash_pw as h
+            if h(old_dlg.value()) != self._settings.get('pin_master_hash', ''):
+                QMessageBox.warning(self, 'Error', 'Contraseña maestra incorrecta.')
+                return
+
+        dlg = _MasterInputDialog(self, 'Nueva contraseña maestra:')
+        if not dlg.exec() or not dlg.value().strip():
+            return
+        dlg2 = _MasterInputDialog(self, 'Confirma la nueva contraseña maestra:')
+        if not dlg2.exec():
+            return
+        if dlg.value() != dlg2.value():
+            QMessageBox.warning(self, 'Error', 'Las contraseñas no coinciden.')
+            return
+        self._settings.set('pin_master_hash', _hash_pw(dlg.value()))
+        self._master_status.setText('✓ Contraseña maestra configurada')
+        self._master_status.setStyleSheet('color:#44aa66; font-size:11px;')
+        QMessageBox.information(self, 'Listo', 'Contraseña maestra establecida correctamente.')
+
+    def _clear_master_password(self):
+        if not self._settings.get('pin_master_hash', ''):
+            QMessageBox.information(self, 'Aviso', 'No hay contraseña maestra configurada.')
+            return
+        r = QMessageBox.question(self, 'Quitar contraseña maestra',
+                                 '¿Seguro que quieres quitar la contraseña maestra?\n'
+                                 'Si olvidas el PIN no habrá forma de recuperarlo.',
+                                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if r != QMessageBox.Yes:
+            return
+        self._settings.set('pin_master_hash', '')
+        self._master_status.setText(
+            '⚠ Sin contraseña maestra — si olvidas el PIN no podrás recuperarlo')
+        self._master_status.setStyleSheet('color:#aa8800; font-size:11px;')
+
     # ── Versión ───────────────────────────────────────────────────────────
 
     def _make_version_tab(self) -> QWidget:
@@ -198,7 +319,7 @@ class SettingsDialog(QDialog):
 
     # ── save ─────────────────────────────────────────────────────────────
 
-    def _save(self):
+    def _save(self):  # noqa: E303
         mi = self._master_combo.currentIndex()
         dev = self._dev_indices[mi] if mi < len(self._dev_indices) else None
         self._settings.set('master_device', dev)
@@ -208,3 +329,47 @@ class SettingsDialog(QDialog):
         self._settings.set('normalize', norm)
         self._engine.normalize = norm
         self.accept()
+
+
+class _MasterInputDialog(QDialog):
+    """Campo de texto para introducir la contraseña maestra."""
+
+    def __init__(self, parent=None, label: str = 'Contraseña maestra:'):
+        super().__init__(parent)
+        self.setWindowTitle('Contraseña maestra')
+        self.setWindowFlags(Qt.Dialog | Qt.WindowStaysOnTopHint)
+        self.setModal(True)
+        self.setFixedWidth(320)
+        self.setStyleSheet('QDialog{background:#0d0d18;} QLabel{color:#aaaacc;}')
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(10)
+        layout.addWidget(QLabel(label))
+
+        self._input = QLineEdit()
+        self._input.setEchoMode(QLineEdit.Password)
+        self._input.setPlaceholderText('Contraseña…')
+        self._input.setStyleSheet(
+            'background:#1a1a28; color:#e0e0e0; border:1px solid #3a3a60;'
+            'border-radius:6px; padding:6px; font-size:14px;')
+        layout.addWidget(self._input)
+
+        row = QHBoxLayout()
+        btn_ok = QPushButton('Confirmar')
+        btn_ok.setStyleSheet(
+            'background:#0d1f0d; color:#44ee88; border:1px solid #1a4a1a;'
+            'border-radius:6px; padding:5px; font-size:13px;')
+        btn_ok.clicked.connect(self.accept)
+        btn_cancel = QPushButton('Cancelar')
+        btn_cancel.setStyleSheet(
+            'background:#1a1a28; color:#888; border:1px solid #2a2a40;'
+            'border-radius:6px; padding:5px; font-size:13px;')
+        btn_cancel.clicked.connect(self.reject)
+        row.addWidget(btn_ok)
+        row.addWidget(btn_cancel)
+        layout.addLayout(row)
+        self._input.returnPressed.connect(self.accept)
+
+    def value(self) -> str:
+        return self._input.text()
