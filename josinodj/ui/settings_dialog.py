@@ -26,6 +26,10 @@ class _UpdateChecker(QThread):
 
 
 CHANGELOG = {
+    '2.2.0': (
+        '- Botón de Ayuda con guía completa del programa\n'
+        '- Buscador en el móvil para filtrar canciones por título o artista'
+    ),
     '2.1.0': (
         '- Desinstalador completamente arreglado\n'
         '- Ahora borra correctamente la carpeta de Program Files\n'

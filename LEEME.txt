@@ -1,5 +1,5 @@
 ╔══════════════════════════════════════════════════════════════════╗
-║                       JOSINODJ  v2.1.0                          ║
+║                       JOSINODJ  v2.2.0                          ║
 ║                     Software de DJ personal                     ║
 ╚══════════════════════════════════════════════════════════════════╝
 
@@ -14,7 +14,6 @@
   4. Se creará un acceso directo en el Escritorio y en el Menú Inicio
   5. El programa se abrirá automáticamente al terminar
 
-  ¡Listo! No necesitas instalar Python ni ninguna otra cosa.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ACTUALIZACIONES AUTOMÁTICAS

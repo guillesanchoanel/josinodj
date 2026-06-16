@@ -486,6 +486,12 @@ class MainWindow(QMainWindow):
 
         btn_settings.clicked.connect(self._open_settings)
 
+        btn_help = QPushButton('? Ayuda')
+
+        btn_help.setFixedHeight(30)
+
+        btn_help.clicked.connect(self._open_help)
+
 
 
         hl.addWidget(logo)
@@ -509,6 +515,8 @@ class MainWindow(QMainWindow):
         hl.addWidget(btn_download)
 
         hl.addWidget(btn_settings)
+
+        hl.addWidget(btn_help)
 
         return bar
 
@@ -1449,6 +1457,14 @@ class MainWindow(QMainWindow):
             return
 
         SettingsDialog(self._settings, self._engine, self).exec()
+
+
+
+    def _open_help(self):
+
+        from josinodj.ui.help_dialog import HelpDialog
+
+        HelpDialog(self).exec()
 
 
 

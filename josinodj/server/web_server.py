@@ -120,6 +120,14 @@ _HTML = """<!DOCTYPE html>
   .ctx-item:active{background:#1e1e38}
   .ctx-sep{height:1px;background:#1a1a30;margin:2px 0}
   .ctx-danger{color:#cc4444}
+  .pl-search-wrap{flex-shrink:0;padding:8px 16px 4px}
+  #pl-search{width:100%;background:#111122;border:1px solid #2a2a50;
+             border-radius:20px;padding:8px 14px;color:#ccc;font-size:14px;
+             outline:none;-webkit-appearance:none}
+  #pl-search::placeholder{color:#333355}
+  #pl-search:focus{border-color:#5a50e0}
+  #pl-noresult{display:none;color:#333355;font-size:12px;
+               padding:20px 4px;text-align:center}
 </style>
 </head>
 <body>
@@ -152,9 +160,13 @@ _HTML = """<!DOCTYPE html>
     </div>
   </div>
 
+  <div class="pl-search-wrap">
+    <input type="search" id="pl-search" placeholder="🔍 Buscar canción..." oninput="onSearch(this.value)" autocomplete="off" autocorrect="off" spellcheck="false">
+  </div>
   <div class="pl-wrap">
     <div class="pl-title">Lista de reproducción</div>
     <div id="playlist"></div>
+    <div id="pl-noresult">Sin resultados</div>
   </div>
 
   <div class="ctx-overlay" id="ctx-overlay" onclick="closeCtx()"></div>
@@ -171,9 +183,30 @@ _HTML = """<!DOCTYPE html>
   </div>
 
 <script>
-  var _plData=[], _lastCur=-1;
+  var _plData=[], _lastCur=-1, _searchQ='';
   var _dg={el:null,ghost:null,fromIdx:-1,toIdx:-1,itemH:0};
   var _scrollTimer=null;
+
+  function onSearch(q){
+    _searchQ=q.trim().toLowerCase();
+    applySearch();
+  }
+
+  function applySearch(){
+    var items=document.querySelectorAll('.pl-item');
+    var q=_searchQ, found=0;
+    items.forEach(function(item,i){
+      var t=_plData[i];
+      if(!t){item.style.display='none';return;}
+      var match=!q
+        ||(t.title||'').toLowerCase().indexOf(q)>=0
+        ||(t.artist||'').toLowerCase().indexOf(q)>=0;
+      item.style.display=match?'':'none';
+      if(match) found++;
+    });
+    var nr=document.getElementById('pl-noresult');
+    if(nr) nr.style.display=(found===0&&q)?'':'none';
+  }
 
   function fmt(s){
     s=Math.floor(s||0);
@@ -236,6 +269,7 @@ _HTML = """<!DOCTYPE html>
         +'</div>';
     }
     pl.innerHTML=html;
+    applySearch();
     initDrag();
     if(cur>=0 && cur!==_lastCur){
       _lastCur=cur;
