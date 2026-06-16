@@ -26,7 +26,7 @@ class _UpdateChecker(QThread):
 
 
 CHANGELOG = {
-    '2.3.2': (
+    '2.3.3': (
         '- Arrastrar canciones desde la búsqueda directamente a la lista\n'
         '- El numpad del PIN ahora acepta teclado (números, Backspace, Enter)\n'
         '- Corrección: cambiar canción durante crossfade actualiza audio y UI correctamente\n'
