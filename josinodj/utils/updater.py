@@ -10,6 +10,7 @@ import subprocess
 import urllib.request
 import urllib.error
 import json
+import threading
 
 GITHUB_REPO = 'guillesanchoanel/josinodj'
 API_URL     = f'https://api.github.com/repos/{GITHUB_REPO}/releases/latest'
@@ -53,16 +54,19 @@ def check_and_update(parent_widget=None) -> bool:
 
     # Buscar asset .zip
     asset_url = None
+    asset_size = 0
     for asset in data.get('assets', []):
         if asset['name'].endswith('.zip'):
             asset_url = asset['browser_download_url']
+            asset_size = asset.get('size', 0)
             break
 
     if not asset_url:
         return False
 
     # Confirmar con el usuario
-    from PySide6.QtWidgets import QMessageBox
+    from PySide6.QtWidgets import QMessageBox, QProgressDialog
+    from PySide6.QtCore import Qt
     msg = QMessageBox(parent_widget)
     msg.setWindowTitle('Actualización disponible')
     msg.setText(
@@ -77,37 +81,114 @@ def check_and_update(parent_widget=None) -> bool:
     if msg.clickedButton() != btn_si:
         return False
 
-    # Descargar
-    try:
-        tmp_zip = os.path.join(tempfile.gettempdir(), 'josinodj_update.zip')
-        urllib.request.urlretrieve(asset_url, tmp_zip)
-    except Exception as e:
-        QMessageBox.critical(parent_widget, 'Error',
-                             f'No se pudo descargar la actualización:\n{e}')
+    # Diálogo de progreso
+    size_mb = asset_size / (1024 * 1024) if asset_size else 0
+    label = f'Descargando actualización v{remote_ver}…'
+    if size_mb:
+        label += f'\n({size_mb:.0f} MB — puede tardar varios minutos)'
+    progress = QProgressDialog(label, None, 0, 100, parent_widget)
+    progress.setWindowTitle('JOSINODJ — Actualizando')
+    progress.setWindowModality(Qt.ApplicationModal)
+    progress.setMinimumDuration(0)
+    progress.setMinimumWidth(400)
+    progress.setCancelButton(None)   # sin botón cancelar
+    progress.setValue(0)
+    progress.show()
+
+    from PySide6.QtWidgets import QApplication
+    QApplication.processEvents()
+
+    # Descargar en hilo de fondo — reportar progreso al hilo principal
+    tmp_zip = os.path.join(tempfile.gettempdir(), 'josinodj_update.zip')
+    download_error = [None]
+    download_done  = [False]
+    bytes_received = [0]
+
+    def _download():
+        try:
+            req2 = urllib.request.Request(asset_url, headers={'User-Agent': 'JOSINODJ-updater'})
+            with urllib.request.urlopen(req2) as resp:
+                total = int(resp.headers.get('Content-Length', asset_size or 0))
+                chunk = 65536   # 64 KB
+                received = 0
+                with open(tmp_zip, 'wb') as f:
+                    while True:
+                        data = resp.read(chunk)
+                        if not data:
+                            break
+                        f.write(data)
+                        received += len(data)
+                        bytes_received[0] = received
+                        if total:
+                            bytes_received[0] = int(received / total * 90)  # 0-90%
+        except Exception as e:
+            download_error[0] = str(e)
+        finally:
+            download_done[0] = True
+
+    t = threading.Thread(target=_download, daemon=True)
+    t.start()
+
+    while not download_done[0]:
+        progress.setValue(bytes_received[0] if asset_size else (progress.value() + 1) % 90)
+        QApplication.processEvents()
+        t.join(timeout=0.1)
+
+    if download_error[0]:
+        progress.close()
+        QMessageBox.critical(parent_widget, 'Error de descarga',
+                             f'No se pudo descargar la actualización:\n{download_error[0]}')
         return False
 
-    # Extraer a carpeta temporal (el exe está corriendo y sus DLLs están bloqueadas)
+    # Extraer
+    progress.setLabelText('Extrayendo archivos…')
+    progress.setValue(91)
+    QApplication.processEvents()
+
     tmp_extract = tempfile.mkdtemp(prefix='josinodj_update_')
     try:
         with zipfile.ZipFile(tmp_zip, 'r') as z:
             z.extractall(tmp_extract)
     except Exception as e:
+        progress.close()
         QMessageBox.critical(parent_widget, 'Error',
                              f'No se pudo extraer la actualización:\n{e}')
         return False
 
-    # Lanzar INSTALAR.bat desde la carpeta temporal — se ejecuta DESPUÉS de que el exe cierre
+    progress.setValue(98)
+    progress.setLabelText('Lanzando instalador…\n\nAparecerá una ventana pidiendo permisos de administrador.\n¡Acepta para completar la instalación!')
+    QApplication.processEvents()
+
+    # Lanzar INSTALAR.bat — necesita UAC
     installer = os.path.join(tmp_extract, 'INSTALAR.bat')
     if os.path.exists(installer):
-        subprocess.Popen(['cmd', '/c', installer], cwd=tmp_extract,
-                         creationflags=subprocess.CREATE_NEW_CONSOLE)
+        subprocess.Popen(
+            ['cmd', '/c', installer],
+            cwd=tmp_extract,
+            creationflags=subprocess.CREATE_NEW_CONSOLE,
+        )
+    else:
+        progress.close()
+        QMessageBox.warning(parent_widget, 'Aviso',
+                            'Archivos descargados pero no se encontró el instalador.\n'
+                            f'Instala manualmente desde:\n{tmp_extract}')
+        return False
+
+    progress.setValue(100)
+    QApplication.processEvents()
+
+    QMessageBox.information(
+        parent_widget,
+        'Cerrando JOSINODJ',
+        'La actualización se está instalando.\n\n'
+        'Acepta el aviso de administrador que aparecerá.\n\n'
+        'JOSINODJ se cerrará ahora y se reiniciará automáticamente.'
+    )
 
     return True
 
 
 def _install_dir() -> str:
-    # Si corremos como exe compilado: carpeta del exe
     if getattr(sys, 'frozen', False):
         return os.path.dirname(sys.executable)
-    # En desarrollo: raíz del proyecto
-    return os.path.dirname(os.path.abspath(VERSION_FILE))
+    return os.path.dirname(os.path.abspath(__file__))

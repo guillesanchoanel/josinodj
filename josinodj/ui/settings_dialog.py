@@ -26,10 +26,11 @@ class _UpdateChecker(QThread):
 
 
 CHANGELOG = {
-    '2.3.0': (
+    '2.3.1': (
         '- Arrastrar canciones desde la búsqueda a la lista\n'
         '- Corrección: cambiar canción durante crossfade actualiza audio y UI correctamente\n'
-        '- Corrección: detección automática de intro/outro para mejor timing de crossfade'
+        '- Corrección: insertar canción en lista durante crossfade ya no confunde la pista actual\n'
+        '- Corrección: actualizaciones automáticas muestran progreso y aviso de UAC'
     ),
     '2.2.0': (
         '- Botón de Ayuda con guía completa del programa\n'
