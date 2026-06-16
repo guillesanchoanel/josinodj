@@ -12,7 +12,7 @@ if errorlevel 1 (
 
 set "SRC=%~dp0"
 set "DEST=%ProgramFiles%\JOSINODJ"
-set VERSION=2.3.3
+set VERSION=2.3.4
 
 echo.
 echo  ============================
@@ -24,7 +24,7 @@ echo.
 
 :: Esperar a que JOSINODJ.exe se cierre completamente antes de copiar
 echo  Esperando a que JOSINODJ se cierre...
-ping 127.0.0.1 -n 5 > nul
+ping 127.0.0.1 -n 9 > nul
 
 :: Copiar archivos
 echo  Copiando archivos...

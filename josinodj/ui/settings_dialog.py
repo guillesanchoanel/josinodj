@@ -26,6 +26,10 @@ class _UpdateChecker(QThread):
 
 
 CHANGELOG = {
+    '2.3.4': (
+        '- Corrección: instalador ya no falla con "Infracción al compartir" al actualizar\n'
+        '  (el aviso de cierre se muestra antes de lanzar INSTALAR.bat)'
+    ),
     '2.3.3': (
         '- Arrastrar canciones desde la búsqueda directamente a la lista\n'
         '- El numpad del PIN ahora acepta teclado (números, Backspace, Enter)\n'

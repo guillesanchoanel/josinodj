@@ -42,8 +42,7 @@ class WaveformWidget(QWidget):
 
     def set_peaks(self, peaks: np.ndarray):
         """Recibe picos ya calculados — sin computación, sin tirón."""
-        self._peaks    = peaks
-        self._position = 0.0
+        self._peaks = peaks
         self.update()
 
     def set_audio(self, data: np.ndarray, sr: int):

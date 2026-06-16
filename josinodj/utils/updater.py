@@ -155,19 +155,8 @@ def check_and_update(parent_widget=None) -> bool:
                              f'No se pudo extraer la actualización:\n{e}')
         return False
 
-    progress.setValue(98)
-    progress.setLabelText('Lanzando instalador…\n\nAparecerá una ventana pidiendo permisos de administrador.\n¡Acepta para completar la instalación!')
-    QApplication.processEvents()
-
-    # Lanzar INSTALAR.bat — necesita UAC
     installer = os.path.join(tmp_extract, 'INSTALAR.bat')
-    if os.path.exists(installer):
-        subprocess.Popen(
-            ['cmd', '/c', installer],
-            cwd=tmp_extract,
-            creationflags=subprocess.CREATE_NEW_CONSOLE,
-        )
-    else:
+    if not os.path.exists(installer):
         progress.close()
         QMessageBox.warning(parent_widget, 'Aviso',
                             'Archivos descargados pero no se encontró el instalador.\n'
@@ -175,14 +164,26 @@ def check_and_update(parent_widget=None) -> bool:
         return False
 
     progress.setValue(100)
+    progress.close()
     QApplication.processEvents()
 
+    # Avisar al usuario ANTES de lanzar el instalador — así el click en OK
+    # sucede antes de que INSTALAR.bat empiece, dando tiempo al exe a cerrarse.
     QMessageBox.information(
         parent_widget,
-        'Cerrando JOSINODJ',
-        'La actualización se está instalando.\n\n'
-        'Acepta el aviso de administrador que aparecerá.\n\n'
-        'JOSINODJ se cerrará ahora y se reiniciará automáticamente.'
+        'Listo para instalar',
+        'La actualización se ha descargado correctamente.\n\n'
+        'Al pulsar OK:\n'
+        '  1. JOSINODJ se cerrará\n'
+        '  2. Aparecerá una ventana pidiendo permisos de administrador — acéptala\n'
+        '  3. La actualización se instalará y JOSINODJ se abrirá de nuevo'
+    )
+
+    # Lanzar INSTALAR.bat justo después del click en OK
+    subprocess.Popen(
+        ['cmd', '/c', installer],
+        cwd=tmp_extract,
+        creationflags=subprocess.CREATE_NEW_CONSOLE,
     )
 
     return True
