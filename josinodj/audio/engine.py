@@ -25,6 +25,7 @@ class AudioEngine(QObject):
         self._master_volume = 0.8
         self._crossfade_duration = 4.0
         self._cf_samples = int(self._crossfade_duration * self._sr)
+        self._cf_samples_actual = self._cf_samples  # actual duration for current CF (never mutates _cf_samples)
 
         # Normalización de volumen
         self._normalize     = True
@@ -37,6 +38,12 @@ class AudioEngine(QObject):
         self._current: np.ndarray | None = None
         self._current_pos = 0
         self._current_len = 0
+
+        self._current_effective_end = 0  # outro point in samples
+        self._next_intro  = 0             # intro offset for next track
+        self._next_effective_end = 0      # outro point for next track
+        self._switch_peaks = None         # cached peaks from preload → emitted at track switch
+        self._preload_gen = 0             # incremented on every play_file/preload to cancel stale workers
 
         self._next: np.ndarray | None = None
         self._next_pos = 0
@@ -130,6 +137,38 @@ class AudioEngine(QObject):
         ]).astype(np.float32)
 
     @staticmethod
+    def _detect_intro(data: np.ndarray, sr: int) -> int:
+        """Devuelve el offset en samples donde empieza realmente la música."""
+        mono = np.mean(data, axis=1) if data.ndim > 1 else data.flatten()
+        win = max(1, sr // 20)  # ventanas de 50ms
+        n = len(mono) // win
+        if n < 4:
+            return 0
+        blocks = mono[:n * win].reshape(n, win)
+        rms = np.sqrt(np.mean(blocks ** 2, axis=1))
+        thr = rms.max() * 0.02
+        for i in range(n - 1):
+            if rms[i] > thr and rms[i + 1] > thr:
+                return max(0, (i - 1) * win)
+        return 0
+
+    @staticmethod
+    def _detect_outro(data: np.ndarray, sr: int) -> int:
+        """Devuelve el offset en samples donde la música termina realmente."""
+        mono = np.mean(data, axis=1) if data.ndim > 1 else data.flatten()
+        win = max(1, sr // 20)  # ventanas de 50ms
+        n = len(mono) // win
+        if n < 4:
+            return len(data)
+        blocks = mono[:n * win].reshape(n, win)
+        rms = np.sqrt(np.mean(blocks ** 2, axis=1))
+        thr = rms.max() * 0.01
+        for i in range(n - 1, -1, -1):
+            if rms[i] > thr:
+                return min(len(data), (i + 3) * win)
+        return len(data)
+
+    @staticmethod
     def _compute_peaks(data: np.ndarray, n: int = 500) -> np.ndarray:
         mono = np.mean(data, axis=1) if data.ndim > 1 else data
         trunc = len(mono) - (len(mono) % n)
@@ -180,9 +219,9 @@ class AudioEngine(QObject):
             next_rem = len(self._next) - self._next_pos
             read = min(frames, remaining, next_rem)
 
-            if read > 0 and self._cf_samples > 0:
-                t0 = self._cf_progress / self._cf_samples
-                t1 = min(1.0, (self._cf_progress + read) / self._cf_samples)
+            if read > 0 and self._cf_samples_actual > 0:
+                t0 = self._cf_progress / self._cf_samples_actual
+                t1 = min(1.0, (self._cf_progress + read) / self._cf_samples_actual)
                 t  = np.linspace(t0, t1, read, dtype=np.float32)
                 fo = (np.cos(t * (np.pi / 2)) ** 2).reshape(-1, 1)
                 fi = (np.sin(t * (np.pi / 2)) ** 2).reshape(-1, 1)
@@ -195,33 +234,45 @@ class AudioEngine(QObject):
                 self._next_pos    += read
                 self._cf_progress += read
 
-                done = (self._cf_progress >= self._cf_samples
+                done = (self._cf_progress >= self._cf_samples_actual
                         or self._current_pos >= self._current_len)
                 if done:
                     self._current      = self._next
                     self._current_pos  = self._next_pos
                     self._current_len  = len(self._current)
-                    self._next          = None
-                    self._next_pos      = 0
-                    self._crossfading   = False
-                    self._cf_progress   = 0
-                    self._next_loaded   = False
-                    self._current_gain  = self._next_gain
-                    self._next_gain     = 1.0
-                    self._pending_switch = True
+                    self._current_effective_end = (
+                        self._next_effective_end if self._next_effective_end > 0
+                        else len(self._current)
+                    )
+                    self._next               = None
+                    self._next_pos           = 0
+                    self._next_intro         = 0
+                    self._next_effective_end = 0
+                    self._crossfading        = False
+                    self._cf_progress        = 0
+                    self._next_loaded        = False
+                    self._current_gain       = self._next_gain
+                    self._next_gain          = 1.0
+                    self._pending_switch     = True
             else:
                 # Current track ran out (or cf_samples=0) → switch immediately to next
                 self._current      = self._next
                 self._current_pos  = self._next_pos
                 self._current_len  = len(self._current)
-                self._next         = None
-                self._next_pos     = 0
-                self._crossfading  = False
-                self._cf_progress  = 0
-                self._next_loaded  = False
-                self._current_gain = self._next_gain
-                self._next_gain    = 1.0
-                self._pending_switch = True
+                self._current_effective_end = (
+                    self._next_effective_end if self._next_effective_end > 0
+                    else len(self._current)
+                )
+                self._next               = None
+                self._next_pos           = 0
+                self._next_intro         = 0
+                self._next_effective_end = 0
+                self._crossfading        = False
+                self._cf_progress        = 0
+                self._next_loaded        = False
+                self._current_gain       = self._next_gain
+                self._next_gain          = 1.0
+                self._pending_switch     = True
                 # Fill outdata from the new current track
                 rem2 = self._current_len - self._current_pos
                 rd2  = min(frames, rem2)
@@ -252,13 +303,13 @@ class AudioEngine(QObject):
                     self._pending_end = True
 
             if self._next is not None and not self._crossfading:
-                samples_left = self._current_len - self._current_pos
+                samples_left = self._current_effective_end - self._current_pos
                 if samples_left <= self._cf_samples:
-                    # Clamp cf_samples to actual audio remaining so curve always completes
-                    self._cf_samples  = max(1, samples_left)
+                    # Clamp actual CF duration — never touch _cf_samples (user-set value)
+                    self._cf_samples_actual = max(1, samples_left)
                     self._crossfading = True
                     self._cf_progress = 0
-                    self._next_pos    = 0
+                    self._next_pos    = self._next_intro  # skip silent intro of next track
 
         # Aplicar EQ al bloque completo de salida
         if self._playing and not self._paused and not self._eq.is_flat():
@@ -311,9 +362,18 @@ class AudioEngine(QObject):
     # ── public API ────────────────────────────────────────────────────────
 
     def play_file(self, path: str) -> bool:
+        # Stop crossfade immediately — decode blocks main thread for 1-5s;
+        # without this the old crossfade keeps playing during the entire decode.
+        self._crossfading = False
+        self._next = None
+        self._next_loaded = False
+        self._paused = True          # mute old stream while decoding
+        self._preload_gen += 1       # invalidate any running preload workers
+
         try:
             data = self._decode(path)
         except Exception as e:
+            self._paused = False
             self.decode_error.emit(str(e))
             return False
         self._close_stream(self._master_stream)
@@ -321,8 +381,13 @@ class AudioEngine(QObject):
         self._current      = data
         self._current_pos  = 0
         self._current_len  = len(data)
+        self._current_effective_end = len(data)  # provisional, refined in bg
         self._current_gain = self._compute_gain(data)
+        self._switch_peaks = None  # clear cached peaks on manual track change
         self._next         = None
+        self._next_pos     = 0
+        self._next_intro   = 0
+        self._next_effective_end = 0
         self._next_gain    = 1.0
         self._next_loaded  = False
         self._crossfading  = False
@@ -334,25 +399,42 @@ class AudioEngine(QObject):
         self._master_stream = self._open_stream(self._master_cb, self._master_device)
         self.playback_started.emit()
         self.duration_changed.emit(self._current_len / self._sr)
-        # Calcular picos en background — no bloquea el hilo de audio
-        def _emit_peaks(d=data):
-            self.waveform_ready.emit(self._compute_peaks(d))
+        def _emit_peaks(d=data, sr=self._sr):
+            peaks = self._compute_peaks(d)
+            self.waveform_ready.emit(peaks)
+            outro = self._detect_outro(d, sr)
+            # Guard: only update if still on same track (avoids race after crossfade switch)
+            if self._current is d:
+                self._current_effective_end = outro
+                self.duration_changed.emit(outro / sr)
         threading.Thread(target=_emit_peaks, daemon=True).start()
         return True
 
     def preload_next_async(self, path: str):
-        threading.Thread(target=self._preload_worker, args=(path,), daemon=True).start()
+        self._preload_gen += 1
+        threading.Thread(target=self._preload_worker, args=(path, self._preload_gen), daemon=True).start()
 
-    def _preload_worker(self, path: str):
+    def _preload_worker(self, path: str, gen: int):
         try:
             data = self._decode(path)
-            self._next       = data
-            self._next_pos   = 0
-            self._next_loaded = True
-            self._next_gain  = self._compute_gain(data)
-            # Do NOT touch _cf_samples here — the slider controls that value
+            # Abort if play_file was called while we were decoding
+            if gen != self._preload_gen:
+                return
+            self._next               = data
+            self._next_pos           = 0
+            self._next_intro         = 0
+            self._next_effective_end = len(data)
+            self._next_loaded        = True
+            self._next_gain          = self._compute_gain(data)
             peaks = self._compute_peaks(data)
+            self._switch_peaks = peaks   # cache for instant emission at track switch
             self.next_waveform_ready.emit(peaks)
+            # Refine intro/outro — only update if crossfade hasn't started yet
+            intro = self._detect_intro(data, self._sr)
+            outro = self._detect_outro(data, self._sr)
+            if self._next is data and gen == self._preload_gen:
+                self._next_intro         = intro
+                self._next_effective_end = outro
         except Exception as e:
             print(f'[engine] preload error: {e}')
 
@@ -386,7 +468,10 @@ class AudioEngine(QObject):
 
     @property
     def duration(self) -> float:
-        return self._current_len / self._sr if self._current is not None else 0.0
+        if self._current is None:
+            return 0.0
+        end = self._current_effective_end if self._current_effective_end > 0 else self._current_len
+        return end / self._sr
 
     @property
     def is_playing(self) -> bool:
@@ -404,6 +489,8 @@ class AudioEngine(QObject):
     def crossfade_duration(self, v: float):
         self._crossfade_duration = max(0.0, min(v, 30.0))
         self._cf_samples = int(self._crossfade_duration * self._sr)
+        if not self._crossfading:
+            self._cf_samples_actual = self._cf_samples
 
     @property
     def normalize(self) -> bool:
@@ -451,10 +538,16 @@ class AudioEngine(QObject):
         if self._pending_switch:
             self._pending_switch = False
             if self._current is not None:
-                self.duration_changed.emit(self._current_len / self._sr)
-                def _emit_sw(d=self._current):
-                    self.waveform_ready.emit(self._compute_peaks(d))
-                threading.Thread(target=_emit_sw, daemon=True).start()
+                end = self._current_effective_end if self._current_effective_end > 0 else self._current_len
+                self.duration_changed.emit(end / self._sr)
+                if self._switch_peaks is not None:
+                    # Emit from main thread — instant, no CPU spike, no position reset race
+                    self.waveform_ready.emit(self._switch_peaks)
+                    self._switch_peaks = None
+                else:
+                    def _emit_sw(d=self._current):
+                        self.waveform_ready.emit(self._compute_peaks(d))
+                    threading.Thread(target=_emit_sw, daemon=True).start()
             self.track_switched.emit()
         if self._pending_end:
             self._pending_end = False

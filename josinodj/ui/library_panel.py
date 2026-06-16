@@ -5,8 +5,8 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QHeaderView, QFileDialog, QMenu, QTreeWidget,
     QTreeWidgetItem, QSplitter,
 )
-from PySide6.QtCore import Qt, Signal, QRunnable, QThreadPool, QObject
-from PySide6.QtGui import QAction
+from PySide6.QtCore import Qt, Signal, QRunnable, QThreadPool, QObject, QUrl, QMimeData
+from PySide6.QtGui import QAction, QDrag
 
 from ..models.track import Track, is_audio_file
 
@@ -14,6 +14,29 @@ _SKIP = {
     'appdata', 'programdata', 'program files', 'program files (x86)',
     'windows', 'system32', 'syswow64', '$recycle.bin',
 }
+
+
+# ── Drag-capable table ────────────────────────────────────────────────────────
+
+class _DragTable(QTableWidget):
+    """QTableWidget that produces text/uri-list mime data when dragging rows."""
+
+    def startDrag(self, supported_actions):
+        seen, tracks = set(), []
+        for item in self.selectedItems():
+            r = item.row()
+            if r not in seen:
+                seen.add(r)
+                track = self.item(r, 0).data(Qt.UserRole)
+                if track:
+                    tracks.append(track)
+        if not tracks:
+            return
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(t.path) for t in tracks])
+        drag = QDrag(self)
+        drag.setMimeData(mime)
+        drag.exec(Qt.CopyAction)
 
 
 # ── Signals ───────────────────────────────────────────────────────────────────
@@ -155,7 +178,7 @@ class LibraryPanel(QWidget):
         sl.addWidget(self._search)
         tracks_l.addWidget(sb)
 
-        self._table = QTableWidget(0, 4)
+        self._table = _DragTable(0, 4)
         self._table.setHorizontalHeaderLabels(['Título', 'Artista', 'Carpeta', 'Dur.'])
         hdr = self._table.horizontalHeader()
         hdr.setSectionResizeMode(QHeaderView.Interactive)

@@ -176,6 +176,8 @@ class MainWindow(QMainWindow):
 
         self._current_path   = ''
 
+        self._preloaded_path = ''   # path that was passed to preload_next_async
+
         self._auto_mix       = True
 
         self._shuffle        = False
@@ -720,7 +722,19 @@ class MainWindow(QMainWindow):
 
             self._mark_played(self._current_index)
 
-        nxt = self._pick_next_index()
+        # Use the preloaded path to find the track we actually switched to.
+        # _pick_next_index() would be wrong if the playlist changed after preload.
+        nxt = -1
+
+        if self._preloaded_path:
+
+            nxt = self._playlist.find_track_index(self._preloaded_path)
+
+            self._preloaded_path = ''
+
+        if nxt < 0:
+
+            nxt = self._pick_next_index()
 
         if nxt < 0:
 
@@ -807,6 +821,8 @@ class MainWindow(QMainWindow):
         if nxt < 0 or nxt == self._current_index:
 
             return
+
+        self._preloaded_path = tracks[nxt].path
 
         self._engine.preload_next_async(tracks[nxt].path)
 

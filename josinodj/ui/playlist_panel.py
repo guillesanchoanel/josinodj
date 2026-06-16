@@ -127,20 +127,22 @@ class PlaylistModel(QAbstractTableModel):
             return True
 
         if data.hasUrls():
-            existing = {t.path for t in self._tracks}
+            existing = {os.path.normcase(os.path.normpath(t.path)) for t in self._tracks}
             new_tracks = []
             for url in data.urls():
                 if url.isLocalFile():
                     p = url.toLocalFile()
-                    if is_audio_file(p) and p not in existing:
+                    p_key = os.path.normcase(os.path.normpath(p))
+                    if is_audio_file(p) and p_key not in existing:
                         new_tracks.append(self._make_track(p))
-                        existing.add(p)
+                        existing.add(p_key)
                     elif os.path.isdir(p):
                         for fn in sorted(os.listdir(p)):
                             fp = os.path.join(p, fn)
-                            if is_audio_file(fp) and fp not in existing:
+                            fp_key = os.path.normcase(os.path.normpath(fp))
+                            if is_audio_file(fp) and fp_key not in existing:
                                 new_tracks.append(self._make_track(fp))
-                                existing.add(fp)
+                                existing.add(fp_key)
             if new_tracks:
                 self.beginInsertRows(QModelIndex(), insert_at, insert_at + len(new_tracks) - 1)
                 for i, t in enumerate(new_tracks):
