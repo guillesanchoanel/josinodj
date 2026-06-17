@@ -83,7 +83,7 @@ class Track:
     @property
     def bpm_str(self) -> str:
         if self.bpm < 0:
-            return '⟳'
+            return '...'
         return f'{self.bpm:.0f}' if self.bpm else ''
 
     @property
