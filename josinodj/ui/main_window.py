@@ -552,6 +552,8 @@ class MainWindow(QMainWindow):
 
 
 
+        self._player.play_requested.connect(self._on_play_requested)
+
         self._player.prev_requested.connect(self._prev_track)
 
         self._player.next_requested.connect(self._next_track)
@@ -631,6 +633,14 @@ class MainWindow(QMainWindow):
         self._update_next_track_display()
 
 
+
+    def _on_play_requested(self):
+        if self._locked:
+            return
+        if self._current_index < 0 and self._playlist.tracks:
+            self._play_track(0)
+        else:
+            self._engine.toggle_pause()
 
     def _prev_track(self):
 
@@ -1510,7 +1520,7 @@ class MainWindow(QMainWindow):
 
     def _setup_shortcuts(self):
 
-        QShortcut(QKeySequence('Space'), self).activated.connect(self._engine.toggle_pause)
+        QShortcut(QKeySequence('Space'), self).activated.connect(self._on_play_requested)
 
         QShortcut(QKeySequence('Right'), self).activated.connect(self._next_track)
 

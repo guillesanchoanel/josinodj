@@ -1,16 +1,60 @@
 import json
 import os
+import threading
+from collections import deque
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableView, QPushButton,
     QLineEdit, QLabel, QMenu, QFileDialog, QAbstractItemView,
     QHeaderView, QDialog, QCheckBox, QStackedWidget,
 )
 from PySide6.QtCore import (
-    Qt, Signal, QAbstractTableModel, QModelIndex, QMimeData,
+    Qt, Signal, QAbstractTableModel, QModelIndex, QMimeData, QThread,
 )
 from PySide6.QtGui import QColor, QFont, QAction
 
 from ..models.track import Track, COLUMN_KEYS, COLUMN_LABELS, COLUMN_WIDTHS, is_audio_file
+
+
+# ── BPM analyzer (background) ─────────────────────────────────────────────────
+
+class _BpmAnalyzer(QThread):
+    """Detecta BPM de canciones sin BPM en segundo plano, una a una sin prisa."""
+    bpm_ready = Signal(str, float)   # (path, bpm)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._queue: deque = deque()
+        self._lock  = threading.Lock()
+        self._event = threading.Event()
+        self._stop  = False
+
+    def queue(self, path: str):
+        with self._lock:
+            if path not in self._queue:
+                self._queue.append(path)
+        self._event.set()
+        if not self.isRunning():
+            self.start()
+
+    def stop(self):
+        self._stop = True
+        self._event.set()
+        self.wait(3000)
+
+    def run(self):
+        from ..utils.bpm_writer import detect_bpm, write_bpm
+        while not self._stop:
+            self._event.wait()
+            self._event.clear()
+            while not self._stop:
+                with self._lock:
+                    if not self._queue:
+                        break
+                    path = self._queue.popleft()
+                bpm = detect_bpm(path)
+                if bpm > 0:
+                    write_bpm(path, bpm)
+                    self.bpm_ready.emit(path, bpm)
 
 
 class PlaylistModel(QAbstractTableModel):
@@ -161,6 +205,13 @@ class PlaylistModel(QAbstractTableModel):
 
     # ── helpers ───────────────────────────────────────────────────────────
 
+    def col_index(self, key: str) -> int:
+        """Devuelve el índice de columna visible (con offset +1 por la col de estado)."""
+        try:
+            return self._visible.index(key) + 1
+        except ValueError:
+            return -1
+
     def set_visible_columns(self, cols: list[str]):
         self.beginResetModel()
         self._visible = [c for c in COLUMN_KEYS if c in cols]
@@ -294,6 +345,10 @@ class PlaylistPanel(QWidget):
         self._sort_order = Qt.AscendingOrder
         self._model = PlaylistModel()
         self._model.set_visible_columns(settings.get('visible_columns', ['title', 'artist', 'bpm', 'key', 'duration']))
+        self._bpm_analyzer = _BpmAnalyzer(self)
+        self._bpm_analyzer.bpm_ready.connect(self._on_bpm_ready)
+        self._model.rowsInserted.connect(self._on_rows_inserted)
+        self.destroyed.connect(lambda: self._bpm_analyzer.stop())
         self._setup_ui()
 
     def _setup_ui(self):
@@ -720,6 +775,24 @@ class PlaylistPanel(QWidget):
             return
         self._model.add_track(track, pos)
         self.playlist_changed.emit()
+        if track.bpm == 0:
+            self._bpm_analyzer.queue(track.path)
+
+    def _on_rows_inserted(self, parent, first: int, last: int):
+        for row in range(first, last + 1):
+            track = self._model.tracks[row]
+            if track.bpm == 0:
+                self._bpm_analyzer.queue(track.path)
+
+    def _on_bpm_ready(self, path: str, bpm: float):
+        for row, track in enumerate(self._model.tracks):
+            if track.path == path:
+                track.bpm = bpm
+                col = self._model.col_index('bpm')
+                if col >= 0:
+                    idx = self._model.index(row, col)
+                    self._model.dataChanged.emit(idx, idx)
+                break
 
     def set_playing_index(self, index: int):
         self._model.set_playing(index)

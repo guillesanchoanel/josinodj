@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QProgressBar, QApplication,
     QTabWidget, QWidget, QListWidget, QListWidgetItem,
-    QAbstractItemView,
+    QAbstractItemView, QRadioButton, QButtonGroup,
 )
 from PySide6.QtCore import Qt, Signal, QObject
 
@@ -76,10 +76,11 @@ class DownloadDialog(QDialog):
         self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
         self.setStyleSheet(_BASE_STYLE)
 
-        self._sigs       = _Sigs()
-        self._cancelled  = False
-        self._last_file  = ''
-        self._dl_url     = ''     # URL que se está descargando actualmente
+        self._sigs        = _Sigs()
+        self._cancelled   = False
+        self._last_file   = ''
+        self._dl_url      = ''     # URL que se está descargando actualmente
+        self._all_results = []     # resultados sin filtrar
 
         self._sigs.progress.connect(self._on_progress)
         self._sigs.done.connect(self._on_done)
@@ -164,6 +165,30 @@ class DownloadDialog(QDialog):
         search_row.addWidget(self._btn_search)
         layout.addLayout(search_row)
 
+        # Duration filter
+        filter_row = QHBoxLayout()
+        filter_row.setSpacing(16)
+        filter_lbl = QLabel('Duración:')
+        filter_lbl.setStyleSheet('color:#666688; font-size:11px;')
+        _rb_style = 'color:#aaaacc; font-size:11px;'
+        self._rb_short  = QRadioButton('Hasta 10 min')
+        self._rb_long   = QRadioButton('Más de 10 min')
+        self._rb_all    = QRadioButton('Todos')
+        for rb in (self._rb_short, self._rb_long, self._rb_all):
+            rb.setStyleSheet(_rb_style)
+        self._rb_short.setChecked(True)
+        self._dur_group = QButtonGroup(self)
+        self._dur_group.addButton(self._rb_short, 0)
+        self._dur_group.addButton(self._rb_long,  1)
+        self._dur_group.addButton(self._rb_all,   2)
+        self._dur_group.buttonClicked.connect(self._apply_dur_filter)
+        filter_row.addWidget(filter_lbl)
+        filter_row.addWidget(self._rb_short)
+        filter_row.addWidget(self._rb_long)
+        filter_row.addWidget(self._rb_all)
+        filter_row.addStretch()
+        layout.addLayout(filter_row)
+
         # Results list
         self._results = QListWidget()
         self._results.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -240,7 +265,7 @@ class DownloadDialog(QDialog):
                 'skip_download': True,
             }
             with yt_dlp.YoutubeDL(opts) as ydl:
-                data = ydl.extract_info(f'ytsearch15:{query}', download=False)
+                data = ydl.extract_info(f'ytsearch100:{query}', download=False)
             entries = data.get('entries', []) if data else []
             results = []
             for e in entries:
@@ -258,12 +283,25 @@ class DownloadDialog(QDialog):
             self._sigs.search_error.emit(str(ex))
 
     def _on_search_results(self, results: list):
-        self._results.clear()
+        self._all_results = results
         self._btn_search.setEnabled(True)
-        if not results:
-            self._results.addItem('Sin resultados.')
+        self._apply_dur_filter()
+
+    def _apply_dur_filter(self, _btn=None):
+        mode = self._dur_group.checkedId()   # 0=corto, 1=largo, 2=todos
+        self._results.clear()
+        filtered = []
+        for r in self._all_results:
+            d = r.get('duration') or 0
+            if mode == 0 and d > 600:    # Hasta 10 min: excluir largos
+                continue
+            if mode == 1 and (d == 0 or d <= 600):  # Más de 10 min: excluir cortos y sin duración
+                continue
+            filtered.append(r)
+        if not filtered:
+            self._results.addItem('Sin resultados con este filtro.')
             return
-        for r in results:
+        for r in filtered:
             dur = _fmt_dur(r['duration'])
             line1 = r['title']
             line2 = f"  {r['uploader']}  ·  {dur}" if dur else f"  {r['uploader']}"
@@ -384,6 +422,8 @@ class DownloadDialog(QDialog):
         self._btn_dl.setEnabled(True)
         self._results.setEnabled(True)
         self._btn_search.setEnabled(True)
+        self._btn_add.setText('➕ Añadir a la lista')
+        self._btn_add.setEnabled(True)
         self._btn_add.show()
 
     def _on_error(self, msg: str):

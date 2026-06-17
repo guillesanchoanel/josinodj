@@ -1,5 +1,5 @@
 ╔══════════════════════════════════════════════════════════════════╗
-║                       JOSINODJ  v2.3.4                          ║
+║                       JOSINODJ  v2.4.0                          ║
 ║                     Software de DJ personal                     ║
 ╚══════════════════════════════════════════════════════════════════╝
 
@@ -41,6 +41,11 @@
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   FUNCIONES PRINCIPALES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  🎵  BPM automático
+     Al añadir canciones a la lista, JOSINODJ detecta su BPM
+     automáticamente en segundo plano si no lo tiene guardado,
+     y actualiza la columna BPM sin interrumpir la reproducción.
 
   ▶  Reproducción automática (AUTO)
      Las canciones pasan una detrás de otra sin que tengas que hacer
@@ -96,6 +101,9 @@
     3. Activa el punto de acceso en Windows manualmente si no está ya
     4. Conecta el móvil a la red JOSINODJ con la contraseña indicada
     5. Escanea el segundo QR para abrir la página de control
+
+  Puedes filtrar por duración (Hasta 10 min / Más de 10 min / Todos)
+  para encontrar canciones sueltas o sesiones rápidamente.
 
   Desde el móvil puedes:
     - Ver la canción que está sonando y la siguiente

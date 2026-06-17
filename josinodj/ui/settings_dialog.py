@@ -26,6 +26,13 @@ class _UpdateChecker(QThread):
 
 
 CHANGELOG = {
+    '2.4.0': (
+        '- BPM automático: se detecta y guarda en segundo plano al añadir canciones sin BPM\n'
+        '- Play arranca la primera canción de la lista si no hay ninguna activa\n'
+        '- YouTube: búsqueda ampliada a 100 resultados\n'
+        '- YouTube: filtro por duración (Hasta 10 min / Más de 10 min / Todos)\n'
+        '- Corrección: botón "Añadir a lista" se resetea correctamente entre descargas'
+    ),
     '2.3.4': (
         '- Corrección: instalador ya no falla con "Infracción al compartir" al actualizar\n'
         '  (el aviso de cierre se muestra antes de lanzar INSTALAR.bat)'

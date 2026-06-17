@@ -84,10 +84,11 @@ class LibraryPanel(QWidget):
     def __init__(self, settings, parent=None):
         super().__init__(parent)
         self.setObjectName('libraryPanel')
-        self._settings    = settings
-        self._master      = ''
-        self._pool        = QThreadPool.globalInstance()
-        self._gen         = 0
+        self._settings       = settings
+        self._master         = ''
+        self._current_folder = ''
+        self._pool           = QThreadPool.globalInstance()
+        self._gen            = 0
         self._active_sigs: set = set()
         self._setup_ui()
         self._restore_master()
@@ -303,6 +304,7 @@ class LibraryPanel(QWidget):
 
     def _load(self, folder: str):
         """Inicia carga recursiva. Cancela (ignora) cualquier carga anterior."""
+        self._current_folder = folder
         self._gen += 1
         self._table.setRowCount(0)
         self._count_lbl.setText('')
@@ -380,3 +382,4 @@ class LibraryPanel(QWidget):
                 item = self._table.item(row, 0)
                 if item:
                     self.add_to_playlist.emit(item.data(Qt.UserRole))
+

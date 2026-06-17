@@ -16,6 +16,7 @@ _TOGGLE_ON  = ('background:#1a3a2a;border:1px solid #3a8a3a;border-radius:6px;'
 
 
 class PlayerBar(QWidget):
+    play_requested    = Signal()
     prev_requested    = Signal()
     next_requested    = Signal()
     shuffle_toggled   = Signal(bool)
@@ -83,7 +84,7 @@ class PlayerBar(QWidget):
 
         self._btn_play = TransportButton('play', is_main=True)
         self._btn_play.setToolTip('Play / Pausa  (Espacio)')
-        self._btn_play.clicked.connect(self._engine.toggle_pause)
+        self._btn_play.clicked.connect(self.play_requested)
 
         self._btn_next = TransportButton('next')
         self._btn_next.setToolTip('Siguiente  (→)')
