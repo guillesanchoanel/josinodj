@@ -32,8 +32,14 @@ class AudioEngine(QObject):
         self._current_gain  = 1.0
         self._next_gain     = 1.0
 
-        from .equalizer import Equalizer
+        from .equalizer import Equalizer, _lowshelf_coeffs, _biquad
         self._eq = Equalizer(self._sr, self._ch)
+        self._lowshelf_coeffs = _lowshelf_coeffs
+        self._biquad_fn       = _biquad
+
+        # Crossfade EQ state — bass swap (outgoing loses bass, incoming gains bass)
+        self._cf_eq_out_z = np.zeros((2, self._ch), dtype=np.float64)
+        self._cf_eq_in_z  = np.zeros((2, self._ch), dtype=np.float64)
 
         self._current: np.ndarray | None = None
         self._current_pos = 0
@@ -205,6 +211,32 @@ class AudioEngine(QObject):
         gain = target / rms
         return float(np.clip(gain, 0.15, 5.0))  # -16dB … +14dB máximo
 
+    def _cf_apply_bass(self, audio: np.ndarray, t: float, outgoing: bool) -> np.ndarray:
+        """
+        Professional DJ bass swap during crossfade (low shelf at 200 Hz).
+        Outgoing: bass starts cutting at t=0.25, fully gone at t=1.0  (-10 dB max)
+        Incoming: bass enters at t=0.55, fully restored at t=1.0
+        This creates a brief bass vacuum in the middle — classic DJ EQ technique.
+        """
+        if outgoing:
+            if t < 0.25:
+                return audio
+            dB = -10.0 * min(1.0, (t - 0.25) / 0.75)
+        else:
+            if t >= 0.95:
+                return audio
+            raw = max(0.0, (t - 0.55) / 0.45) if t > 0.55 else 0.0
+            dB = -10.0 * (1.0 - raw)
+
+        if abs(dB) < 0.2:
+            return audio
+        z = self._cf_eq_out_z if outgoing else self._cf_eq_in_z
+        b, a = self._lowshelf_coeffs(200.0, dB, self._sr)
+        out = audio.astype(np.float64)
+        for ch in range(self._ch):
+            out[:, ch], z[:, ch] = self._biquad_fn(b, a, out[:, ch], z[:, ch])
+        return out.astype(np.float32)
+
     # ── audio callback ────────────────────────────────────────────────────
 
     def _master_cb(self, outdata, frames, time_info, status):
@@ -227,6 +259,10 @@ class AudioEngine(QObject):
                 fi = (np.sin(t * (np.pi / 2)) ** 2).reshape(-1, 1)
                 a  = self._current[self._current_pos: self._current_pos + read] * self._current_gain
                 b  = self._next[self._next_pos: self._next_pos + read] * self._next_gain
+                # Bass swap: outgoing loses bass, incoming gains bass
+                t_mid = float(t0 + t1) * 0.5
+                a = self._cf_apply_bass(a, t_mid, outgoing=True)
+                b = self._cf_apply_bass(b, t_mid, outgoing=False)
                 outdata[:read] = np.clip((a * fo + b * fi) * self._master_volume, -1.0, 1.0)
                 if read < frames:
                     outdata[read:] = 0
@@ -310,6 +346,9 @@ class AudioEngine(QObject):
                     self._crossfading = True
                     self._cf_progress = 0
                     self._next_pos    = self._next_intro  # skip silent intro of next track
+                    # Reset bass-swap filter states for a clean start
+                    self._cf_eq_out_z[:] = 0.0
+                    self._cf_eq_in_z[:] = 0.0
 
         # Aplicar EQ al bloque completo de salida
         if self._playing and not self._paused and not self._eq.is_flat():
@@ -392,6 +431,8 @@ class AudioEngine(QObject):
         self._next_loaded  = False
         self._crossfading  = False
         self._cf_progress  = 0
+        self._cf_eq_out_z[:] = 0.0
+        self._cf_eq_in_z[:] = 0.0
         self._pending_switch = False
         self._pending_end    = False
         self._playing = True
@@ -540,13 +581,17 @@ class AudioEngine(QObject):
             if self._current is not None:
                 end = self._current_effective_end if self._current_effective_end > 0 else self._current_len
                 self.duration_changed.emit(end / self._sr)
+                # Delay waveform repaint 150ms so the audio callback isn't fighting the
+                # Qt paint event for the GIL right at the transition moment.
                 if self._switch_peaks is not None:
-                    # Emit from main thread — instant, no CPU spike, no position reset race
-                    self.waveform_ready.emit(self._switch_peaks)
+                    peaks = self._switch_peaks
                     self._switch_peaks = None
+                    QTimer.singleShot(150, lambda p=peaks: self.waveform_ready.emit(p))
                 else:
-                    def _emit_sw(d=self._current):
-                        self.waveform_ready.emit(self._compute_peaks(d))
+                    d = self._current
+                    def _emit_sw(d=d):
+                        peaks = self._compute_peaks(d)
+                        QTimer.singleShot(0, lambda p=peaks: self.waveform_ready.emit(p))
                     threading.Thread(target=_emit_sw, daemon=True).start()
             self.track_switched.emit()
         if self._pending_end:

@@ -26,6 +26,12 @@ class _UpdateChecker(QThread):
 
 
 CHANGELOG = {
+    '2.5.0': (
+        '- Mezcla profesional entre canciones: curva equal-power + bass swap con low shelf\n'
+        '- Los graves de la canción saliente se reducen progresivamente durante el crossfade\n'
+        '- Los graves de la canción entrante aparecen con retraso (técnica clásica de DJ)\n'
+        '- Eliminado micro-petardazo al cambiar de canción durante el crossfade'
+    ),
     '2.4.2': (
         '- BPM: muestra ... mientras calcula; clic en celda vacía para reintentar\n'
         '- Corrección: librosa ahora se incluye correctamente en el instalador'

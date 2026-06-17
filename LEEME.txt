@@ -1,5 +1,5 @@
 ╔══════════════════════════════════════════════════════════════════╗
-║                       JOSINODJ  v2.4.2                          ║
+║                       JOSINODJ  v2.5.0                          ║
 ║                     Software de DJ personal                     ║
 ╚══════════════════════════════════════════════════════════════════╝
 
@@ -51,8 +51,11 @@
      Las canciones pasan una detrás de otra sin que tengas que hacer
      nada. Actívalo/desactívalo con el botón ∞ del reproductor.
 
-  ↔  Crossfade
-     Mezcla suave entre canciones para que no haya cortes bruscos.
+  ↔  Crossfade profesional
+     Mezcla entre canciones con curva equal-power y bass swap automático:
+     los graves de la canción que termina se reducen progresivamente
+     mientras los de la canción nueva entran con retraso, igual que
+     hace un DJ profesional con el ecualizador.
      Ajusta los segundos con el deslizador ↔ (0 a 30 segundos).
      La zona roja en la onda muestra dónde empieza el cruce.
 

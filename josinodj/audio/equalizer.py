@@ -15,6 +15,25 @@ EQ_BANDS = [
 N_BANDS = len(EQ_BANDS)
 
 
+def _lowshelf_coeffs(f0: float, dB: float, fs: int):
+    """Low shelf biquad: cuts/boosts all frequencies below f0."""
+    if abs(dB) < 0.02:
+        return np.array([1.0, 0.0, 0.0]), np.array([1.0, 0.0, 0.0])
+    A      = 10.0 ** (dB / 40.0)
+    w0     = 2.0 * np.pi * f0 / fs
+    cos_w0 = np.cos(w0)
+    alpha  = np.sin(w0) / 2.0 * np.sqrt(2.0)   # slope S=1
+    sqA    = np.sqrt(A)
+    b0 =     A * ((A+1) - (A-1)*cos_w0 + 2*sqA*alpha)
+    b1 = 2 * A * ((A-1) - (A+1)*cos_w0)
+    b2 =     A * ((A+1) - (A-1)*cos_w0 - 2*sqA*alpha)
+    a0 =          (A+1) + (A-1)*cos_w0 + 2*sqA*alpha
+    a1 =    -2 * ((A-1) + (A+1)*cos_w0)
+    a2 =          (A+1) + (A-1)*cos_w0 - 2*sqA*alpha
+    return (np.array([b0/a0, b1/a0, b2/a0]),
+            np.array([1.0,   a1/a0, a2/a0]))
+
+
 def _peak_coeffs(f0: float, dB: float, Q: float, fs: int):
     """Coeficientes biquad peaking EQ. Devuelve (b, a) normalizados."""
     if abs(dB) < 0.02:
