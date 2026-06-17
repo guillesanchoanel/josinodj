@@ -82,6 +82,8 @@ class Track:
 
     @property
     def bpm_str(self) -> str:
+        if self.bpm < 0:
+            return '⟳'
         return f'{self.bpm:.0f}' if self.bpm else ''
 
     @property
@@ -110,7 +112,7 @@ class Track:
             'genre': self.genre,
             'year': self.year,
             'duration': self.duration,
-            'bpm': self.bpm,
+            'bpm': max(0.0, self.bpm),
             'key': self.key,
             'bitrate': self.bitrate,
             'sample_rate': self.sample_rate,

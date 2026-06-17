@@ -28,9 +28,9 @@ class _BpmAnalyzer(QThread):
         self._event = threading.Event()
         self._stop  = False
 
-    def queue(self, path: str):
+    def queue(self, path: str, retry: bool = False):
         with self._lock:
-            if path not in self._queue:
+            if retry or path not in self._queue:
                 self._queue.append(path)
         self._event.set()
         if not self.isRunning():
@@ -54,7 +54,7 @@ class _BpmAnalyzer(QThread):
                 bpm = detect_bpm(path)
                 if bpm > 0:
                     write_bpm(path, bpm)
-                    self.bpm_ready.emit(path, bpm)
+                self.bpm_ready.emit(path, bpm)   # siempre emite, 0 = fallo
 
 
 class PlaylistModel(QAbstractTableModel):
@@ -450,6 +450,7 @@ class PlaylistPanel(QWidget):
         self._table.setContextMenuPolicy(Qt.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._context_menu)
         self._table.doubleClicked.connect(self._on_double_click)
+        self._table.clicked.connect(self._on_bpm_cell_clicked)
 
         hdr = self._table.horizontalHeader()
         hdr.setStretchLastSection(False)
@@ -776,23 +777,45 @@ class PlaylistPanel(QWidget):
         self._model.add_track(track, pos)
         self.playlist_changed.emit()
         if track.bpm == 0:
-            self._bpm_analyzer.queue(track.path)
+            self._queue_bpm(track)
 
     def _on_rows_inserted(self, parent, first: int, last: int):
         for row in range(first, last + 1):
             track = self._model.tracks[row]
             if track.bpm == 0:
-                self._bpm_analyzer.queue(track.path)
+                self._queue_bpm(track, row)
+
+    def _queue_bpm(self, track, row: int = -1):
+        track.bpm = -1
+        if row < 0:
+            try:
+                row = self._model.tracks.index(track)
+            except ValueError:
+                return
+        col = self._model.col_index('bpm')
+        if col >= 0:
+            idx = self._model.index(row, col)
+            self._model.dataChanged.emit(idx, idx)
+        self._bpm_analyzer.queue(track.path, retry=(track.bpm == -1))
 
     def _on_bpm_ready(self, path: str, bpm: float):
         for row, track in enumerate(self._model.tracks):
             if track.path == path:
-                track.bpm = bpm
+                track.bpm = bpm   # 0 = fallo, >0 = ok
                 col = self._model.col_index('bpm')
                 if col >= 0:
                     idx = self._model.index(row, col)
                     self._model.dataChanged.emit(idx, idx)
                 break
+
+    def _on_bpm_cell_clicked(self, index):
+        """Clic en columna BPM vacía → reintentar cálculo."""
+        col = self._model.col_index('bpm')
+        if index.column() != col or col < 0:
+            return
+        track = self._model.tracks[index.row()] if index.row() < len(self._model.tracks) else None
+        if track and track.bpm == 0:
+            self._queue_bpm(track, index.row())
 
     def set_playing_index(self, index: int):
         self._model.set_playing(index)

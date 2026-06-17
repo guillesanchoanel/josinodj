@@ -26,6 +26,10 @@ class _UpdateChecker(QThread):
 
 
 CHANGELOG = {
+    '2.4.1': (
+        '- BPM: muestra ⟳ mientras calcula y permite reintentar haciendo clic en la celda vacía\n'
+        '- Corrección: el spinner ⟳ no se guarda en sesión si se cierra mientras calcula'
+    ),
     '2.4.0': (
         '- BPM automático: se detecta y guarda en segundo plano al añadir canciones sin BPM\n'
         '- Play arranca la primera canción de la lista si no hay ninguna activa\n'
