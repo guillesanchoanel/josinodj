@@ -598,6 +598,13 @@ class MainWindow(QMainWindow):
         if (not hard and self._engine.is_playing and self._current_index >= 0
                 and index != self._current_index and self._engine.smart_mix):
             # Como un DJ: la que suena sigue hasta el siguiente compás y se mezcla
+            if self._engine.is_mixing:
+                # Ya hay una transición sonando: nada de cortes, va justo después
+                self._queued_index = index
+                self.statusBar().showMessage(
+                    f'🎚  Al acabar esta transición se mezcla: {track.title}', 8000)
+                return
+            self._queued_index = -1
             self._preloaded_path = track.path
             self._preload_done = True
             self._engine.mix_to(track.path)
@@ -790,9 +797,11 @@ class MainWindow(QMainWindow):
         # Diferir mark_played 150ms para no coincidir con el momento del crossfade
 
         played = set(self._played_indices)
-
         QTimer.singleShot(150, lambda: self._playlist.mark_played(played))
-
+        q = getattr(self, '_queued_index', -1)
+        self._queued_index = -1
+        if 0 <= q < len(tracks) and q != nxt:
+            QTimer.singleShot(300, lambda i=q: self._play_track(i))
 
 
     def _on_track_ended(self):

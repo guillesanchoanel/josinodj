@@ -555,6 +555,11 @@ class AudioEngine(QObject):
         threading.Thread(target=run, daemon=True).start()
 
     @property
+    def is_mixing(self) -> bool:
+        """Sonando ahora mismo una transición."""
+        return self._mixing
+
+    @property
     def mix_pending(self) -> bool:
         return self._mix is not None or self._mix_busy or self._mixing
 

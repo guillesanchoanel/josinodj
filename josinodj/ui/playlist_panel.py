@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QHeaderView, QDialog, QCheckBox, QStackedWidget,
 )
 from PySide6.QtCore import (
-    Qt, Signal, QAbstractTableModel, QModelIndex, QMimeData, QThread,
+    Qt, Signal, QAbstractTableModel, QModelIndex, QMimeData, QThread, QEvent,
 )
 from PySide6.QtGui import QColor, QFont, QAction
 
@@ -368,6 +368,12 @@ class PlaylistPanel(QWidget):
         self._name_edit.setPlaceholderText('Sin título')
         self._name_edit.setMaximumWidth(180)
 
+        btn_add = QPushButton('➕ Canciones')
+        btn_add.setFixedHeight(28)
+        btn_add.setToolTip('Elegir canciones del PC para añadir a la lista\n'
+                           '(Ctrl+clic para elegir varias, Mayús+clic para un rango, Ctrl+E todas)')
+        btn_add.clicked.connect(self._add_files_dialog)
+
         btn_open = QPushButton('📂 Abrir')
         btn_open.setFixedHeight(28)
         btn_open.clicked.connect(self._open_playlist)
@@ -408,6 +414,7 @@ class PlaylistPanel(QWidget):
 
         tl.addWidget(QLabel('Lista:'))
         tl.addWidget(self._name_edit)
+        tl.addWidget(btn_add)
         tl.addWidget(btn_open)
         tl.addWidget(btn_save)
         tl.addStretch()
@@ -470,6 +477,12 @@ class PlaylistPanel(QWidget):
         self._stack.setCurrentIndex(0)
 
         layout.addWidget(self._stack, 1)
+
+        # Arrastrar canciones/carpetas desde el PC: vale soltar en cualquier
+        # parte del panel (también con la lista vacía). Siempre como COPIA:
+        # nunca se mueve ni se borra nada del PC.
+        self.setAcceptDrops(True)
+        self._table.viewport().installEventFilter(self)
 
         # Footer
         footer = QWidget()
@@ -699,24 +712,90 @@ class PlaylistPanel(QWidget):
         hint.setStyleSheet('color:#333355; font-size:13px;')
         vl.addWidget(hint)
 
-        w.setAcceptDrops(True)
-        w.dragEnterEvent = lambda e: e.acceptProposedAction() if e.mimeData().hasUrls() else None
-        w.dropEvent = self._on_splash_drop
         return w
 
-    def _on_splash_drop(self, event):
-        from ..models.track import Track, is_audio_file
+    # ── Añadir canciones del PC (diálogo y arrastrar) ─────────────────────
+
+    def _add_files_dialog(self):
+        start = self._settings.get('master_folder', '') or ''
+        if not os.path.isdir(start):
+            start = os.path.join(os.path.expanduser('~'), 'Downloads')
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, 'Añadir canciones  (Ctrl+clic: varias · Mayús+clic: rango · Ctrl+E: todas)',
+            start, 'Audio (*.mp3 *.flac *.wav *.ogg *.m4a *.aac *.wma *.opus);;Todos (*.*)')
+        if paths:
+            self.add_paths(paths)
+
+    def add_paths(self, paths: list, pos: int = -1) -> int:
+        """Añade archivos de audio (y el contenido de carpetas) a la lista."""
         from ..utils.metadata import read_metadata
-        for url in event.mimeData().urls():
-            if url.isLocalFile():
-                p = url.toLocalFile()
-                if is_audio_file(p):
-                    try:
-                        track = Track(path=p, **read_metadata(p))
-                    except Exception:
-                        track = Track(path=p)
-                    self._model.add_track(track)
-        self.playlist_changed.emit()
+        files = []
+        for p in paths:
+            if os.path.isdir(p):
+                for root, _dirs, names in os.walk(p):
+                    files += [os.path.join(root, n) for n in sorted(names)]
+            else:
+                files.append(p)
+        have = {os.path.normcase(os.path.normpath(t.path)) for t in self._model.tracks}
+        added = 0
+        for f in files:
+            key = os.path.normcase(os.path.normpath(f))
+            if not is_audio_file(f) or key in have:
+                continue
+            have.add(key)
+            try:
+                track = Track(path=f, **read_metadata(f))
+            except Exception:
+                track = Track(path=f)
+            self.add_track(track, pos + added if pos >= 0 else -1)
+            added += 1
+        return added
+
+    @staticmethod
+    def _external_paths(md) -> list:
+        if md.hasFormat('application/x-josinodj-rows') or not md.hasUrls():
+            return []
+        return [u.toLocalFile() for u in md.urls() if u.isLocalFile()]
+
+    def _accept_copy(self, e) -> bool:
+        if self._external_paths(e.mimeData()):
+            e.setDropAction(Qt.CopyAction)
+            e.accept()
+            return True
+        return False
+
+    def dragEnterEvent(self, e):
+        if not self._accept_copy(e):
+            super().dragEnterEvent(e)
+
+    def dragMoveEvent(self, e):
+        if not self._accept_copy(e):
+            super().dragMoveEvent(e)
+
+    def dropEvent(self, e):
+        paths = self._external_paths(e.mimeData())
+        if not paths:
+            return super().dropEvent(e)
+        e.setDropAction(Qt.CopyAction)
+        e.accept()
+        self.add_paths(paths)
+
+    def eventFilter(self, obj, e):
+        # Soltar archivos del PC encima de la tabla: se insertan donde se suelta
+        if obj is self._table.viewport():
+            t = e.type()
+            if t in (QEvent.DragEnter, QEvent.DragMove):
+                if self._accept_copy(e):
+                    return True
+            elif t == QEvent.Drop:
+                paths = self._external_paths(e.mimeData())
+                if paths:
+                    e.setDropAction(Qt.CopyAction)
+                    e.accept()
+                    row = self._table.indexAt(e.position().toPoint()).row()
+                    self.add_paths(paths, row)
+                    return True
+        return super().eventFilter(obj, e)
 
     def _font_larger(self):
         if self._row_font_size < 26:

@@ -26,6 +26,12 @@ class _UpdateChecker(QThread):
 
 
 CHANGELOG = {
+    '2.6.4': (
+        '- Arrastrar canciones o carpetas del PC a la lista (también con la lista vacía)\n'
+        '- Botón Canciones: elegir varias a la vez (Ctrl+clic, Mayús+clic)\n'
+        '- Biblioteca: botón Añadir selección\n'
+        '- Transiciones sin saltos al empezar ni al terminar; pedir otra canción en plena mezcla ya no corta\n'
+    ),
     '2.6.3': (
         '- Transiciones largas de toda la vida: la que sale baja con filtro y reverb, la que entra sube\n'
         '- Los graves se cambian a mitad, en el compás, para que no choquen los bombos\n'

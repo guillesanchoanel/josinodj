@@ -559,6 +559,16 @@ def build(a_data, b_data, ga, gb, ia: TrackInfo, ib: TrackInfo, earliest: int,
             return None
         p = p2
         buf, res = render(a_data, b_data, ga, gb, p)
+    # Unión perfecta con la entrante: los últimos ~12 ms se funden con la
+    # canción B real, así no hay ningún clic cuando sigue sonando sola
+    X = min(512, len(buf))
+    tail = np.zeros((X, 2), dtype=np.float32)
+    s0 = res - X
+    if s0 >= 0 and res <= len(b_data):
+        tail[:] = b_data[s0:res] * gb
+        w = np.linspace(0, 1, X, dtype=np.float32)[:, None]
+        buf = buf.copy()
+        buf[-X:] = buf[-X:] * (1 - w) + tail * w
     return p, buf, res
 
 
@@ -723,7 +733,7 @@ def _render_space(a, b, ga, gb, a_start: int, b_start: int, T: int, swap: int, x
     a_pos = 4.2 * _ramp(ta, 0.1 * T, swap) + 2.3 * _ramp(ta, swap, T)
     a_f = _hp_sweep(aseg, a_pos)
     vol_a = np.cos(np.pi / 2 * _ramp(ta, 0.25 * T, T)) ** 2      # baja poco a poco
-    send = 0.15 + 0.85 * _ramp(ta, 0.2 * T, 0.85 * T)             # cada vez más espacio
+    send = _ramp(ta, 0.1 * T, 0.85 * T)                           # cada vez más espacio (desde 0: sin saltos)
     dry = np.zeros((L, 2), dtype=np.float32)
     dry[:T] = a_f * (vol_a * (1 - 0.45 * send))[:, None]
     wet_in = np.zeros((L, 2), dtype=np.float32)

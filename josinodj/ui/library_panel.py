@@ -165,6 +165,14 @@ class LibraryPanel(QWidget):
         btn_add_all.setStyleSheet('font-size:11px; padding:2px 8px;')
         btn_add_all.setToolTip('Añadir todas las pistas visibles a la lista')
         btn_add_all.clicked.connect(self._add_all_visible)
+        self._btn_add_sel = QPushButton('➕ Añadir selección')
+        self._btn_add_sel.setFixedHeight(24)
+        self._btn_add_sel.setStyleSheet('font-size:11px; padding:2px 8px;')
+        self._btn_add_sel.setToolTip('Añadir las pistas marcadas\n'
+                                     '(Ctrl+clic: varias · Mayús+clic: rango · Ctrl+A: todas)')
+        self._btn_add_sel.clicked.connect(self._add_selected)
+        self._btn_add_sel.setEnabled(False)
+        thl.addWidget(self._btn_add_sel)
         thl.addWidget(btn_add_all)
         tracks_l.addWidget(tracks_hdr)
 
@@ -199,6 +207,7 @@ class LibraryPanel(QWidget):
         self._table.doubleClicked.connect(self._on_double_click)
         self._table.setContextMenuPolicy(Qt.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._track_ctx)
+        self._table.itemSelectionChanged.connect(self._update_add_sel)
         tracks_l.addWidget(self._table, 1)
 
         splitter.addWidget(tracks_w)
@@ -364,7 +373,7 @@ class LibraryPanel(QWidget):
 
     def _selected_tracks(self) -> list[Track]:
         seen, result = set(), []
-        for item in self._table.selectedItems():
+        for item in sorted(self._table.selectedItems(), key=lambda i: i.row()):
             t: Track = item.data(Qt.UserRole)
             if t and t.path not in seen:
                 seen.add(t.path)
@@ -385,6 +394,16 @@ class LibraryPanel(QWidget):
         act.triggered.connect(lambda: [self.add_to_playlist.emit(t) for t in tracks])
         menu.addAction(act)
         menu.exec(self._table.viewport().mapToGlobal(pos))
+
+    def _update_add_sel(self):
+        n = len(self._selected_tracks())
+        self._btn_add_sel.setEnabled(n > 0)
+        self._btn_add_sel.setText(f'➕ Añadir selección ({n})' if n else '➕ Añadir selección')
+
+    def _add_selected(self):
+        for t in self._selected_tracks():
+            self.add_to_playlist.emit(t)
+        self._table.clearSelection()
 
     def _add_all_visible(self):
         for row in range(self._table.rowCount()):
