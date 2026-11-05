@@ -2,6 +2,8 @@ import threading
 import numpy as np
 from PySide6.QtCore import QObject, Signal, QTimer
 
+from . import phone_stream
+
 _SPEC_SIZE = 4096  # circular buffer for real-time spectrum
 
 
@@ -16,6 +18,7 @@ class AudioEngine(QObject):
     waveform_ready      = Signal(object)   # peaks np.ndarray current track (bg computed)
     next_waveform_ready = Signal(object)   # peaks np.ndarray for next track
     decode_error        = Signal(str)           # human-readable error when file can't be decoded
+    mix_fallback        = Signal(str)           # mezcla manual imposible -> la UI hace corte normal
 
     def __init__(self):
         super().__init__()
@@ -69,6 +72,17 @@ class AudioEngine(QObject):
         # Spectrum buffer — written by audio callback, read by main thread
         self._spec_buf = np.zeros(_SPEC_SIZE, dtype=np.float32)
         self._spec_idx = 0
+
+        # -- Mezcla DJ (ver dj_mixer.py) --
+        self._cur_path   = ''
+        self._next_path  = ''
+        self._info_cur   = None      # TrackInfo de la cancion que suena
+        self._mix        = None      # transicion ya renderizada, esperando su momento
+        self._mixing     = False     # reproduciendo el buffer de transicion
+        self._mix_pos    = 0
+        self._mix_busy   = False     # hilo preparando una transicion
+        self._mix_gen    = 0
+        self.smart_mix   = True
 
         self._ticker = QTimer()
         self._ticker.timeout.connect(self._tick)
@@ -245,6 +259,10 @@ class AudioEngine(QObject):
             self._feed_spec(outdata[:, 0] if outdata.ndim > 1 else outdata.flatten())
             return
 
+        if self._smart_mix_cb(outdata, frames):
+            self._post_process(outdata)
+            return
+
         remaining = self._current_len - self._current_pos
 
         if self._crossfading and self._next is not None:
@@ -338,7 +356,8 @@ class AudioEngine(QObject):
                     self._playing = False
                     self._pending_end = True
 
-            if self._next is not None and not self._crossfading:
+            if (self._next is not None and not self._crossfading
+                    and self._mix is None and not self._mix_busy):
                 samples_left = self._current_effective_end - self._current_pos
                 if samples_left <= self._cf_samples:
                     # Clamp actual CF duration — never touch _cf_samples (user-set value)
@@ -350,6 +369,9 @@ class AudioEngine(QObject):
                     self._cf_eq_out_z[:] = 0.0
                     self._cf_eq_in_z[:] = 0.0
 
+        self._post_process(outdata)
+
+    def _post_process(self, outdata):
         # Aplicar EQ al bloque completo de salida
         if self._playing and not self._paused and not self._eq.is_flat():
             try:
@@ -360,6 +382,181 @@ class AudioEngine(QObject):
         # Feed output samples to spectrum buffer
         mono = outdata[:, 0] if outdata.ndim > 1 else outdata.flatten()
         self._feed_spec(mono)
+
+        # Retransmisión al móvil: si hay alguno escuchando, suena solo allí
+        phone_stream.tap(outdata)
+        if phone_stream.local_muted():
+            outdata[:] = 0
+
+    # -- Mezcla DJ ------------------------------------------------------------
+
+    def _smart_mix_cb(self, outdata, frames) -> bool:
+        """Si toca (o esta en curso) una transicion preparada, la reproduce."""
+        m = self._mix
+        if m is None:
+            return False
+        if not self._mixing:
+            if m['cur'] is not self._current:
+                self._mix = None
+                return False
+            pre = m['start'] - self._current_pos
+            if pre >= frames:
+                return False
+            if pre < -frames * 4:
+                # Llegamos tarde (seek, bloqueo...): descartar y seguir normal
+                self._mix = None
+                return False
+            pre = max(0, pre)
+            vol = self._master_volume * self._current_gain
+            out = np.zeros((frames, self._ch), dtype=np.float32)
+            if pre:
+                out[:pre] = self._current[self._current_pos:self._current_pos + pre] * vol
+                self._current_pos += pre
+            self._mixing = True
+            self._mix_pos = 0
+            i = pre
+        else:
+            out = np.zeros((frames, self._ch), dtype=np.float32)
+            i = 0
+        buf = m['buf']
+        take = min(frames - i, len(buf) - self._mix_pos)
+        if take > 0:
+            out[i:i + take] = buf[self._mix_pos:self._mix_pos + take] * self._master_volume
+            self._mix_pos += take
+            self._current_pos = min(self._current_len, self._current_pos + take)
+            i += take
+        if self._mix_pos >= len(buf):
+            # Fin de la transicion: B pasa a ser la actual
+            self._current      = m['next']
+            self._current_len  = len(self._current)
+            self._current_pos  = min(m['resume'], self._current_len)
+            self._current_gain = m['gain']
+            self._current_effective_end = m['eff_end'] or self._current_len
+            self._cur_path     = m['path']
+            self._info_cur     = m['info']
+            if self._next is m['next']:
+                self._next = None
+                self._next_loaded = False
+                self._next_pos = 0
+                self._next_intro = 0
+                self._next_effective_end = 0
+                self._next_gain = 1.0
+                self._next_path = ''
+            self._crossfading = False
+            self._mix = None
+            self._mixing = False
+            self._switch_peaks = m.get('peaks')
+            self._pending_switch = True
+            rest = frames - i
+            if rest > 0:
+                n = max(0, min(rest, self._current_len - self._current_pos))
+                out[i:i + n] = self._current[self._current_pos:self._current_pos + n] * \
+                    (self._master_volume * self._current_gain)
+                self._current_pos += n
+        outdata[:] = np.clip(out, -1.0, 1.0)
+        return True
+
+    def _analyze_current_async(self):
+        data, path = self._current, self._cur_path
+
+        def run():
+            from . import dj_mixer
+            info = dj_mixer.analyze(data, path)
+            if self._current is data:
+                self._info_cur = info
+        threading.Thread(target=run, daemon=True).start()
+
+    def _prepare_mix(self, gen: int, quick: bool, b_data=None, b_path='', b_gain=None,
+                     b_eff_end=0, b_peaks=None) -> bool:
+        """Analiza, planifica y renderiza la transicion hacia la siguiente.
+        Se ejecuta en un hilo. Devuelve True si quedo preparada."""
+        from . import dj_mixer
+        self._mix_busy = True
+        try:
+            a = self._current
+            b = b_data if b_data is not None else self._next
+            path = b_path or self._next_path
+            if a is None or b is None:
+                return False
+            ia = self._info_cur
+            if ia is None:
+                ia = dj_mixer.analyze(a, self._cur_path)
+                if self._current is a:
+                    self._info_cur = ia
+            ib = dj_mixer.analyze(b, path)
+            if gen != self._mix_gen or self._current is not a:
+                return False
+            gb = b_gain if b_gain is not None else self._next_gain
+            plan = buf = resume = None
+            for attempt in range(2):
+                margin = (2.0 if quick else 8.0) if attempt == 0 else 1.0
+                earliest = self._current_pos + int(margin * self._sr)
+                res = dj_mixer.build(a, b, self._current_gain, gb, ia, ib, earliest,
+                                     max(self._crossfade_duration, 8.0),
+                                     quick=quick or attempt > 0)
+                if res is None or gen != self._mix_gen or self._current is not a:
+                    return False
+                plan, buf, resume = res
+                if plan.start > self._current_pos + 2048:
+                    break
+                plan = None             # tardamos demasiado: algo mas rapido
+            if plan is None:
+                return False
+            eff_end = b_eff_end or (self._next_effective_end if b is self._next else 0)
+            if not eff_end and ib is not None and 0 <= ib.last_beat < len(ib.beats):
+                eff_end = int(ib.beats[ib.last_beat])
+            self._mix = dict(cur=a, start=plan.start, buf=buf, resume=resume, next=b,
+                             gain=gb, eff_end=eff_end, path=path, info=ib,
+                             peaks=b_peaks if b_peaks is not None else self._switch_peaks,
+                             kind=plan.kind)
+            print(f'[dj] {plan.kind} de {len(buf) / self._sr:.1f}s a los '
+                  f'{plan.start / self._sr:.1f}s (rate {plan.rate:.3f})')
+            return True
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f'[dj] error preparando mezcla: {e}')
+            return False
+        finally:
+            if gen == self._mix_gen:
+                self._mix_busy = False
+
+    def mix_to(self, path: str):
+        """Cambio de cancion a mano mientras suena: mezcla en el siguiente compas
+        en vez de cortar. Si no se puede, emite mix_fallback(path)."""
+        if self._mixing or not self.smart_mix or not self.is_playing or self._current is None:
+            self.mix_fallback.emit(path)
+            return
+        self._mix_gen += 1
+        self._preload_gen += 1          # que ninguna precarga pise esta mezcla
+        self._mix = None
+        gen = self._mix_gen
+
+        def run():
+            try:
+                if path == self._next_path and self._next is not None:
+                    b, gb = self._next, self._next_gain
+                    eff, peaks = self._next_effective_end, self._switch_peaks
+                else:
+                    b = self._decode(path)
+                    gb = self._compute_gain(b)
+                    eff = self._detect_outro(b, self._sr)
+                    peaks = self._compute_peaks(b)
+                if gen != self._mix_gen:
+                    return
+                ok = self._prepare_mix(gen, quick=True, b_data=b, b_path=path, b_gain=gb,
+                                       b_eff_end=eff, b_peaks=peaks)
+                if not ok and gen == self._mix_gen:
+                    self.mix_fallback.emit(path)
+            except Exception as e:
+                print(f'[dj] mix_to: {e}')
+                if gen == self._mix_gen:
+                    self.mix_fallback.emit(path)
+        threading.Thread(target=run, daemon=True).start()
+
+    @property
+    def mix_pending(self) -> bool:
+        return self._mix is not None or self._mix_busy or self._mixing
 
     def _feed_spec(self, mono: np.ndarray):
         n = len(mono)
@@ -435,9 +632,16 @@ class AudioEngine(QObject):
         self._cf_eq_in_z[:] = 0.0
         self._pending_switch = False
         self._pending_end    = False
+        self._mix_gen += 1
+        self._mix = None
+        self._mixing = False
+        self._mix_busy = False
+        self._cur_path = path
+        self._info_cur = None
         self._playing = True
         self._paused  = False
         self._master_stream = self._open_stream(self._master_cb, self._master_device)
+        self._analyze_current_async()
         self.playback_started.emit()
         self.duration_changed.emit(self._current_len / self._sr)
         def _emit_peaks(d=data, sr=self._sr):
@@ -453,6 +657,10 @@ class AudioEngine(QObject):
 
     def preload_next_async(self, path: str):
         self._preload_gen += 1
+        self._mix_gen += 1
+        if not self._mixing:
+            self._mix = None
+        self._next_path = path
         threading.Thread(target=self._preload_worker, args=(path, self._preload_gen), daemon=True).start()
 
     def _preload_worker(self, path: str, gen: int):
@@ -476,6 +684,8 @@ class AudioEngine(QObject):
             if self._next is data and gen == self._preload_gen:
                 self._next_intro         = intro
                 self._next_effective_end = outro
+            if self.smart_mix and gen == self._preload_gen:
+                self._prepare_mix(self._mix_gen, quick=False)
         except Exception as e:
             print(f'[engine] preload error: {e}')
 
@@ -500,8 +710,18 @@ class AudioEngine(QObject):
         self.playback_stopped.emit()
 
     def seek(self, seconds: float):
+        if self._mixing:
+            return                      # en plena transicion no se salta
         if self._current is not None:
             self._current_pos = max(0, min(int(seconds * self._sr), self._current_len - 1))
+            m = self._mix
+            if m is not None and self._current_pos > m['start'] - self._sr:
+                # Se ha saltado por encima del punto de mezcla: replanificar
+                self._mix = None
+                self._mix_gen += 1
+                if self._next is not None and self.smart_mix:
+                    g = self._mix_gen
+                    threading.Thread(target=self._prepare_mix, args=(g, False), daemon=True).start()
 
     @property
     def position(self) -> float:

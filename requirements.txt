@@ -4,3 +4,5 @@ miniaudio>=1.57
 mutagen>=1.47.0
 numpy>=1.24.0
 soundfile>=0.12.1
+lameenc>=1.7
+pylibrb>=0.1.2

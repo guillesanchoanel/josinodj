@@ -220,7 +220,17 @@ class LibraryPanel(QWidget):
     # ── Master folder ─────────────────────────────────────────────────────
 
     def _choose_master(self):
-        folder = QFileDialog.getExistingDirectory(self, 'Carpeta de música')
+        # Diálogo propio de Qt: el de Windows para carpetas no enseña los archivos
+        # y parece que la carpeta está vacía. Este muestra los MP3 (en gris).
+        start = self._master if self._master and os.path.isdir(self._master) \
+            else os.path.join(os.path.expanduser('~'), 'Downloads')
+        dlg = QFileDialog(self, 'Elige la carpeta de música (se ven los archivos, pero se elige la carpeta)', start)
+        dlg.setFileMode(QFileDialog.Directory)
+        dlg.setOption(QFileDialog.DontUseNativeDialog, True)
+        dlg.setOption(QFileDialog.ShowDirsOnly, False)
+        dlg.setNameFilter('Audio (*.mp3 *.flac *.wav *.ogg *.m4a *.aac *.wma *.opus)')
+        dlg.resize(820, 520)
+        folder = dlg.selectedFiles()[0] if dlg.exec() and dlg.selectedFiles() else ''
         if not folder:
             return
         self._master = folder

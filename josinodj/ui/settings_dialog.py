@@ -26,6 +26,17 @@ class _UpdateChecker(QThread):
 
 
 CHANGELOG = {
+    '2.6.0': (
+        '- Mezcla DJ inteligente: analiza golpes, compases, frases, tempo y tono de cada canción\n'
+        '- Beatmatching con key-lock (Rubber Band): la entrante se cuadra al golpe sin cambiar el tono de la voz\n'
+        '- Tras la mezcla la canción vuelve poco a poco a su tempo real\n'
+        '- Estilos con BPM muy distintos: salida con eco a tempo y entrada limpia en el "1"\n'
+        '- Siguiente/anterior/elegir canción a mano también mezclan en el siguiente compás\n'
+        '- Sonar en el móvil: botón en la web del móvil para que la música salga por su Bluetooth\n'
+        '- Indicador abajo a la derecha: suena por el PORTÁTIL o por el MÓVIL\n'
+        '- Elegir carpeta de música: ahora se ven los MP3 dentro de las carpetas\n'
+        '- Ventanas del sistema en español'
+    ),
     '2.5.0': (
         '- Mezcla profesional entre canciones: curva equal-power + bass swap con low shelf\n'
         '- Los graves de la canción saliente se reducen progresivamente durante el crossfade\n'

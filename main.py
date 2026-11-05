@@ -14,6 +14,11 @@ ICON_PATH = os.path.join(os.path.dirname(__file__), 'assets', 'icon.png')
 
 def main():
     app = QApplication(sys.argv)
+    # Diálogos de Qt (elegir carpeta, etc.) en español
+    from PySide6.QtCore import QTranslator, QLibraryInfo
+    _tr = QTranslator(app)
+    if _tr.load('qtbase_es', QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)):
+        app.installTranslator(_tr)
     app.setApplicationName('JOSINODJ')
     app.setApplicationDisplayName('JOSINODJ')
     app.setApplicationVersion(_local_version())

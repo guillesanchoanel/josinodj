@@ -126,6 +126,12 @@ _HTML = """<!DOCTYPE html>
              outline:none;-webkit-appearance:none}
   #pl-search::placeholder{color:#333355}
   #pl-search:focus{border-color:#5a50e0}
+  .phone-btn{margin-top:10px;width:100%;max-width:340px;padding:11px;border-radius:24px;
+             border:1px solid #2a2a50;background:#111122;color:#aaaacc;font-size:14px;font-weight:600;
+             cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .phone-btn.on{background:linear-gradient(135deg,#0a6a3a,#0a8a5a);border-color:#22cc77;color:#fff}
+  .phone-btn.wait{border-color:#aa8822;color:#ddbb44}
+  .phone-hint{font-size:10px;color:#333355;margin-top:4px;text-align:center;max-width:340px}
   #pl-noresult{display:none;color:#333355;font-size:12px;
                padding:20px 4px;text-align:center}
 </style>
@@ -158,6 +164,9 @@ _HTML = """<!DOCTYPE html>
       <span class="next-lbl">Siguiente</span>
       <span class="next-title" id="next-title">—</span>
     </div>
+    <button class="phone-btn" id="phone-btn" onclick="togglePhone()">🔊 Sonar en este móvil</button>
+    <div class="phone-hint" id="phone-hint">Para el altavoz Bluetooth conectado al móvil. El portátil se silencia.</div>
+    <audio id="phone-audio" preload="none"></audio>
   </div>
 
   <div class="pl-search-wrap">
@@ -233,6 +242,7 @@ _HTML = """<!DOCTYPE html>
       document.getElementById('time').textContent=fmt(d.position)+' / '+fmt(d.duration);
       document.getElementById('next-title').textContent = d.next_title || '—';
       setConnected(true);
+      phoneMeta(d);
       renderPlaylist(d.playlist||[], d.current_index, d.played||[]);
     }).catch(function(){ setConnected(false); });
   }
@@ -425,6 +435,70 @@ _HTML = """<!DOCTYPE html>
     fetch('/api/'+action,{method:'POST'}).then(function(){update();});
   }
 
+  /* ── Sonar en este móvil (retransmisión del portátil) ── */
+  var _phoneOn=false, _phoneRetry=null;
+  function phoneUI(state){
+    var b=document.getElementById('phone-btn'), h=document.getElementById('phone-hint');
+    b.className='phone-btn'+(state==='on'?' on':state==='wait'?' wait':'');
+    if(state==='on'){ b.textContent='🔊 Sonando en este móvil — tocar para parar';
+      h.textContent='Deja esta página abierta. Pon el móvil en No molestar.'; }
+    else if(state==='wait'){ b.textContent='⏳ Conectando sonido…'; }
+    else { b.textContent='🔊 Sonar en este móvil';
+      h.textContent='Para el altavoz Bluetooth conectado al móvil. El portátil se silencia.'; }
+  }
+  function phoneStart(){
+    var a=document.getElementById('phone-audio');
+    phoneUI('wait');
+    a.src='/stream?t='+Date.now();
+    a.play().then(function(){ phoneUI('on'); }).catch(function(){ phoneRetry(); });
+  }
+  function phoneRetry(){
+    if(!_phoneOn) return;
+    phoneUI('wait');
+    clearTimeout(_phoneRetry);
+    _phoneRetry=setTimeout(phoneStart,1500);
+  }
+  function togglePhone(){
+    var a=document.getElementById('phone-audio');
+    _phoneOn=!_phoneOn;
+    if(_phoneOn){
+      if('mediaSession' in navigator){
+        navigator.mediaSession.setActionHandler('play',function(){api('toggle');});
+        navigator.mediaSession.setActionHandler('pause',function(){api('toggle');});
+        navigator.mediaSession.setActionHandler('nexttrack',function(){api('next');});
+        navigator.mediaSession.setActionHandler('previoustrack',function(){api('prev');});
+      }
+      phoneStart();
+    } else {
+      clearTimeout(_phoneRetry);
+      a.pause(); a.removeAttribute('src'); a.load();
+      phoneUI('off');
+    }
+  }
+  (function(){
+    var a=document.getElementById('phone-audio');
+    a.addEventListener('error',phoneRetry);
+    a.addEventListener('ended',phoneRetry);
+    a.addEventListener('playing',function(){ if(_phoneOn) phoneUI('on'); });
+    a.addEventListener('pause',function(){
+      // Pausa impuesta por el sistema (llamada, otra app): retomar
+      if(_phoneOn) setTimeout(function(){ if(_phoneOn&&a.paused) phoneStart(); },2000);
+    });
+    // Mantenerse pegado al directo: si se acumula retraso, saltar al final del búfer
+    setInterval(function(){
+      if(!_phoneOn||a.paused||!a.buffered.length) return;
+      var end=a.buffered.end(a.buffered.length-1);
+      if(end-a.currentTime>3) a.currentTime=end-0.8;
+    },2000);
+  })();
+  function phoneMeta(d){
+    if(_phoneOn && 'mediaSession' in navigator && window.MediaMetadata){
+      var k=(d.title||'')+'|'+(d.artist||'');
+      if(phoneMeta._k!==k){ phoneMeta._k=k;
+        navigator.mediaSession.metadata=new MediaMetadata({title:d.title||'JOSINODJ',artist:d.artist||'',album:'JOSINODJ'}); }
+    }
+  }
+
   setInterval(update,2000);
   update();
 </script>
@@ -509,6 +583,15 @@ def move_track_bottom():
     return jsonify({'ok': True})
 
 
+@app.route('/stream')
+def stream():
+    from ..audio import phone_stream
+    r = Response(phone_stream.stream_generator(), mimetype='audio/mpeg')
+    r.headers['Cache-Control'] = 'no-store, no-cache'
+    r.headers['X-Accel-Buffering'] = 'no'
+    return r
+
+
 # ── Server lifecycle ──────────────────────────────────────────────────────────
 
 _server_thread: threading.Thread | None = None
@@ -524,7 +607,7 @@ def start(port: int = 8080):
     log.setLevel(logging.ERROR)
 
     def _run():
-        app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+        app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False, threaded=True)
 
     _server_thread = threading.Thread(target=_run, daemon=True)
     _server_thread.start()

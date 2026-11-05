@@ -144,7 +144,7 @@ from ..utils.session_manager import SessionManager
 
 
 
-PRELOAD_BUFFER = 8.0
+PRELOAD_BUFFER = 90.0   # la mezcla DJ se prepara con tiempo
 
 _ICON_PATH = os.path.normpath(
 
@@ -321,6 +321,9 @@ class MainWindow(QMainWindow):
 
 
         self.statusBar()
+        self._phone_lbl = QLabel('')
+        self._phone_lbl.setStyleSheet('color:#22cc77; font-weight:600; padding:0 8px;')
+        self.statusBar().addPermanentWidget(self._phone_lbl)
 
 
 
@@ -575,6 +578,7 @@ class MainWindow(QMainWindow):
         self._engine.position_changed.connect(self._on_position)
 
         self._engine.decode_error.connect(self._on_decode_error)
+        self._engine.mix_fallback.connect(self._on_mix_fallback)
 
 
 
@@ -582,7 +586,7 @@ class MainWindow(QMainWindow):
 
 
 
-    def _play_track(self, index: int):
+    def _play_track(self, index: int, hard: bool = False):
 
         tracks = self._playlist.tracks
 
@@ -591,7 +595,14 @@ class MainWindow(QMainWindow):
             return
 
         track = tracks[index]
-
+        if (not hard and self._engine.is_playing and self._current_index >= 0
+                and index != self._current_index and self._engine.smart_mix):
+            # Como un DJ: la que suena sigue hasta el siguiente compás y se mezcla
+            self._preloaded_path = track.path
+            self._preload_done = True
+            self._engine.mix_to(track.path)
+            self.statusBar().showMessage(f'🎚  Mezclando hacia: {track.title}…', 8000)
+            return
         if not self._engine.play_file(track.path):
 
             # Eliminar de la lista y saltar a la siguiente
@@ -633,6 +644,12 @@ class MainWindow(QMainWindow):
         self._update_next_track_display()
 
 
+
+    def _on_mix_fallback(self, path: str):
+        """La mezcla manual no se pudo preparar: cambio directo de siempre."""
+        idx = self._playlist.find_track_index(path)
+        if idx >= 0:
+            self._play_track(idx, hard=True)
 
     def _on_play_requested(self):
         if self._locked:
@@ -1288,6 +1305,35 @@ class MainWindow(QMainWindow):
 
 
 
+    def _output_device_name(self) -> str:
+        """Nombre del dispositivo de salida del portátil (cacheado por índice)."""
+        dev = self._engine._master_device
+        if getattr(self, '_out_name_dev', object()) == dev:
+            return self._out_name
+        name = ''
+        try:
+            import sounddevice as sd
+            info = sd.query_devices(dev if dev is not None else sd.default.device[1])
+            name = info['name']
+        except Exception:
+            pass
+        self._out_name_dev, self._out_name = dev, name
+        return name
+
+    def _update_output_label(self, on_phone: bool):
+        """Indicador fijo abajo a la derecha: por dónde sale el sonido."""
+        if on_phone:
+            text  = '📱 Sonido: MÓVIL  (portátil silenciado)'
+            style = 'color:#22cc77; font-weight:700; padding:0 8px;'
+        else:
+            name  = self._output_device_name()
+            text  = f'💻 Sonido: PORTÁTIL' + (f'  ({name})' if name else '')
+            style = 'color:#8888aa; font-weight:600; padding:0 8px;'
+        if self._phone_lbl.text() != text:
+            self._phone_lbl.setText(text)
+            self._phone_lbl.setStyleSheet(style)
+
+
     def _sync_server(self):
 
         """Actualiza estado del servidor y procesa acciones del móvil."""
@@ -1342,6 +1388,10 @@ class MainWindow(QMainWindow):
             next_artist   = nxt_track.artist if nxt_track else '',
 
         )
+
+        from ..audio import phone_stream
+        n_phone = phone_stream.listener_count()
+        self._update_output_label(n_phone > 0)
 
         # Procesar todas las acciones pendientes del móvil
         while True:
