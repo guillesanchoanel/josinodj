@@ -26,6 +26,10 @@ class _UpdateChecker(QThread):
 
 
 CHANGELOG = {
+    '2.6.2': (
+        '- Arreglado el error 403 al descargar de YouTube (yt-dlp actualizado)\n'
+        '- El descargador de YouTube se actualiza solo y reintenta si una descarga falla\n'
+    ),
     '2.6.1': (
         '- Mezclas más cortas: como mucho 16 tiempos (~7-8 s) con BPM parecido, 8 si el tono no pega\n'
         '- Fundido de 5 s (3 s al cambiar a mano)\n'

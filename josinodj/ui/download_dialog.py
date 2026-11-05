@@ -90,6 +90,10 @@ class DownloadDialog(QDialog):
 
         self._build_ui()
 
+        # YouTube cambia a menudo: tener yt-dlp siempre al día (1 vez al día)
+        from josinodj.utils import ytdlp_updater
+        ytdlp_updater.update_async()
+
     # ── UI ────────────────────────────────────────────────────────────────
 
     def _build_ui(self):
@@ -257,6 +261,8 @@ class DownloadDialog(QDialog):
 
     def _search_worker(self, query: str):
         try:
+            from josinodj.utils import ytdlp_updater
+            ytdlp_updater.activate()
             import yt_dlp
             opts = {
                 'quiet': True,
@@ -353,7 +359,9 @@ class DownloadDialog(QDialog):
         self._dl_url    = url
         threading.Thread(target=self._worker, args=(url,), daemon=True).start()
 
-    def _worker(self, url: str):
+    def _worker(self, url: str, retried: bool = False):
+        from josinodj.utils import ytdlp_updater
+        ytdlp_updater.activate()
         import yt_dlp
         dl_dir = Path.home() / 'Downloads'
         dl_dir.mkdir(exist_ok=True)
@@ -390,6 +398,11 @@ class DownloadDialog(QDialog):
                             pass
             self._sigs.done.emit(filepath)
         except Exception as e:
+            if not retried and not self._cancelled:
+                # Casi siempre es yt-dlp viejo (403, firma...): actualizar y reintentar
+                self._sigs.progress.emit(0.0, 'Actualizando el descargador de YouTube…')
+                if ytdlp_updater.update(force=True):
+                    return self._worker(url, retried=True)
             self._sigs.error.emit(str(e))
 
     def _hook(self, d: dict):
