@@ -8,17 +8,15 @@ from PySide6.QtCore import Qt, QThread, Signal
 
 class _UpdateChecker(QThread):
     result = Signal(str, str)  # (texto, color)
+    found  = Signal(str, str, int)  # (versión, url zip, tamaño)
 
     def run(self):
         try:
-            import urllib.request, json
-            from josinodj.utils.updater import _local_version, _parse, API_URL
-            req = urllib.request.Request(API_URL, headers={'User-Agent': 'JOSINODJ-updater'})
-            with urllib.request.urlopen(req, timeout=10) as r:
-                data = json.loads(r.read())
-            remote = data.get('tag_name', '').lstrip('v')
+            from josinodj.utils.updater import _local_version, _parse, latest_release
+            remote, url, size = latest_release()
             if _parse(remote) > _parse(_local_version()):
                 self.result.emit(f'✅ Nueva versión disponible: v{remote}', 'color:green; font-size:12px;')
+                self.found.emit(remote, url, size)
             else:
                 self.result.emit('✓ Tienes la versión más reciente', 'color:#555; font-size:12px;')
         except Exception as e:
@@ -26,6 +24,10 @@ class _UpdateChecker(QThread):
 
 
 CHANGELOG = {
+    '2.6.6': (
+        '- Actualizaciones: ya no fallan con datos del móvil, red lenta o Windows sin certificados\n'
+        '- Ajustes > Versión: botón Instalar ahora cuando hay versión nueva\n'
+    ),
     '2.6.5': (
         '- Móvil: botón Permitir conexión del móvil (arregla la pantalla en negro en WiFi nuevas o punto de acceso del móvil)\n'
         '- Móvil: se muestran otras direcciones del PC por si la del QR no carga\n'
@@ -356,8 +358,14 @@ class SettingsDialog(QDialog):
         self._check_btn.clicked.connect(self._check_updates)
         self._update_status = QLabel('')
         self._update_status.setStyleSheet('font-size:12px;')
+        self._install_btn = QPushButton('⬇ Instalar ahora')
+        self._install_btn.setStyleSheet('font-weight:700; color:#44ee88;')
+        self._install_btn.clicked.connect(self._install_update)
+        self._install_btn.hide()
+        self._found = None
         check_row.addWidget(self._check_btn)
         check_row.addWidget(self._update_status, 1)
+        check_row.addWidget(self._install_btn)
         layout.addLayout(check_row)
 
         layout.addStretch()
@@ -369,7 +377,26 @@ class SettingsDialog(QDialog):
         self._update_status.setStyleSheet('color:#555; font-size:12px;')
         self._checker = _UpdateChecker()
         self._checker.result.connect(self._on_check_result)
+        self._checker.found.connect(self._on_update_found)
         self._checker.start()
+
+    def _on_update_found(self, ver, url, size):
+        self._found = (ver, url, size)
+        self._install_btn.setText(f'⬇ Instalar v{ver} ahora')
+        self._install_btn.show()
+
+    def _install_update(self):
+        import sys
+        from PySide6.QtWidgets import QApplication, QMessageBox
+        from josinodj.utils.updater import download_and_install
+        if not self._found:
+            return
+        if not getattr(sys, 'frozen', False):
+            QMessageBox.information(self, 'Actualizar', 'En modo desarrollo no se instala.')
+            return
+        ver, url, size = self._found
+        if download_and_install(self, ver, url, size, ask=False):
+            QApplication.quit()
 
     def _on_check_result(self, text, style):
         self._update_status.setText(text)

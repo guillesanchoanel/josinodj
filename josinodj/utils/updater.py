@@ -14,7 +14,10 @@ import threading
 
 GITHUB_REPO = 'guillesanchoanel/josinodj'
 API_URL     = f'https://api.github.com/repos/{GITHUB_REPO}/releases/latest'
-TIMEOUT     = 6
+WEB_LATEST  = f'https://github.com/{GITHUB_REPO}/releases/latest'
+ZIP_URL     = f'https://github.com/{GITHUB_REPO}/releases/download/v{{v}}/JOSINODJ-v{{v}}.zip'
+TIMEOUT     = 10
+_UA         = {'User-Agent': 'JOSINODJ-updater'}
 
 
 def _local_version() -> str:
@@ -32,6 +35,54 @@ def _parse(v: str) -> tuple:
         return (0, 0, 0)
 
 
+def _ssl_ctx():
+    """Certificados propios (certifi): en algunos Windows faltan los de GitHub
+    hasta que se visita la web con el navegador, y la comprobación fallaba."""
+    import ssl
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return ssl.create_default_context()
+
+
+def _open(url: str, timeout: float = TIMEOUT, method: str = 'GET'):
+    req = urllib.request.Request(url, headers=_UA, method=method)
+    try:
+        return urllib.request.urlopen(req, timeout=timeout, context=_ssl_ctx())
+    except urllib.error.URLError as e:
+        if 'CERTIFICATE' not in str(e).upper():
+            raise
+        import ssl
+        return urllib.request.urlopen(req, timeout=timeout, context=ssl.create_default_context())
+
+
+def latest_release() -> tuple[str, str, int]:
+    """(versión, url_del_zip, tamaño). Primero la API de GitHub; si falla
+    (límite de 60 consultas/hora por IP: con datos del móvil se agota enseguida,
+    red lenta...), la página web de releases, que no tiene ese límite."""
+    err = None
+    try:
+        with _open(API_URL) as r:
+            data = json.loads(r.read().decode())
+        ver = data.get('tag_name', '').lstrip('v')
+        for asset in data.get('assets', []):
+            if asset['name'].endswith('.zip'):
+                return ver, asset['browser_download_url'], asset.get('size', 0)
+        return ver, ZIP_URL.format(v=ver), 0
+    except Exception as e:
+        err = e
+    try:
+        with _open(WEB_LATEST, method='HEAD') as r:
+            final = r.geturl()                      # .../releases/tag/v2.6.5
+        ver = final.rstrip('/').rsplit('/', 1)[-1].lstrip('v')
+        if _parse(ver) == (0, 0, 0):
+            raise ValueError(f'respuesta rara de GitHub: {final}')
+        return ver, ZIP_URL.format(v=ver), 0
+    except Exception as e2:
+        raise RuntimeError(f'No se pudo consultar GitHub ({err}; {e2})')
+
+
 def check_and_update(parent_widget=None) -> bool:
     """
     Devuelve True si se aplicó una actualización (la app debe reiniciarse).
@@ -40,46 +91,35 @@ def check_and_update(parent_widget=None) -> bool:
     if not getattr(sys, 'frozen', False):
         return False  # En dev no se actualiza
     try:
-        req = urllib.request.Request(API_URL, headers={'User-Agent': 'JOSINODJ-updater'})
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
-            data = json.loads(r.read().decode())
-    except Exception:
+        remote_ver, asset_url, asset_size = latest_release()
+    except Exception as e:
+        print(f'[updater] {e}')
         return False
-
-    remote_tag = data.get('tag_name', '')
-    remote_ver = remote_tag.lstrip('v')
-
     if _parse(remote_ver) <= _parse(_local_version()):
         return False
+    return download_and_install(parent_widget, remote_ver, asset_url, asset_size)
 
-    # Buscar asset .zip
-    asset_url = None
-    asset_size = 0
-    for asset in data.get('assets', []):
-        if asset['name'].endswith('.zip'):
-            asset_url = asset['browser_download_url']
-            asset_size = asset.get('size', 0)
-            break
 
-    if not asset_url:
-        return False
-
-    # Confirmar con el usuario
+def download_and_install(parent_widget, remote_ver: str, asset_url: str,
+                         asset_size: int = 0, ask: bool = True) -> bool:
+    """Descarga el zip de la versión y lanza el instalador. True = cerrar la app."""
     from PySide6.QtWidgets import QMessageBox, QProgressDialog
     from PySide6.QtCore import Qt
-    msg = QMessageBox(parent_widget)
-    msg.setWindowTitle('Actualización disponible')
-    msg.setText(
-        f'Hay una nueva versión de JOSINODJ: <b>v{remote_ver}</b><br>'
-        f'(tienes la <b>v{_local_version()}</b>)<br><br>'
-        '¿Descargar e instalar ahora?'
-    )
-    btn_si = msg.addButton('Sí', QMessageBox.AcceptRole)
-    msg.addButton('No', QMessageBox.RejectRole)
-    msg.setDefaultButton(btn_si)
-    msg.exec()
-    if msg.clickedButton() != btn_si:
-        return False
+    if ask:
+        # Confirmar con el usuario
+        msg = QMessageBox(parent_widget)
+        msg.setWindowTitle('Actualización disponible')
+        msg.setText(
+            f'Hay una nueva versión de JOSINODJ: <b>v{remote_ver}</b><br>'
+            f'(tienes la <b>v{_local_version()}</b>)<br><br>'
+            '¿Descargar e instalar ahora?'
+        )
+        btn_si = msg.addButton('Sí', QMessageBox.AcceptRole)
+        msg.addButton('No', QMessageBox.RejectRole)
+        msg.setDefaultButton(btn_si)
+        msg.exec()
+        if msg.clickedButton() != btn_si:
+            return False
 
     # Diálogo de progreso
     size_mb = asset_size / (1024 * 1024) if asset_size else 0
@@ -106,8 +146,7 @@ def check_and_update(parent_widget=None) -> bool:
 
     def _download():
         try:
-            req2 = urllib.request.Request(asset_url, headers={'User-Agent': 'JOSINODJ-updater'})
-            with urllib.request.urlopen(req2) as resp:
+            with _open(asset_url, timeout=60) as resp:
                 total = int(resp.headers.get('Content-Length', asset_size or 0))
                 chunk = 65536   # 64 KB
                 received = 0
