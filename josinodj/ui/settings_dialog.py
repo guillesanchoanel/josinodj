@@ -26,6 +26,11 @@ class _UpdateChecker(QThread):
 
 
 CHANGELOG = {
+    '2.6.5': (
+        '- Móvil: botón Permitir conexión del móvil (arregla la pantalla en negro en WiFi nuevas o punto de acceso del móvil)\n'
+        '- Móvil: se muestran otras direcciones del PC por si la del QR no carga\n'
+        '- La ventana del móvil cabe en pantallas de portátil\n'
+    ),
     '2.6.4': (
         '- Arrastrar canciones o carpetas del PC a la lista (también con la lista vacía)\n'
         '- Botón Canciones: elegir varias a la vez (Ctrl+clic, Mayús+clic)\n'

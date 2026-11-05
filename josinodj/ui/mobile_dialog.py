@@ -7,7 +7,7 @@ import subprocess
 import socket
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QWidget, QStackedWidget,
+    QWidget, QStackedWidget, QApplication,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap, QImage
@@ -29,6 +29,53 @@ def _local_ip() -> str:
         return ip
     except Exception:
         return ''
+
+
+def _other_ips(main: str) -> list[str]:
+    """Otras IPs del PC (por si la principal es de una VPN o adaptador virtual)."""
+    out = []
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if ip != main and ip not in out and not ip.startswith(('127.', '169.254.')):
+                out.append(ip)
+    except Exception:
+        pass
+    return out
+
+
+def fix_firewall(wait: bool = True) -> bool:
+    """Abre el cortafuegos de Windows para que el móvil pueda conectar en
+    CUALQUIER red (las WiFi nuevas y los puntos de acceso del móvil Windows las
+    marca como 'Pública' y bloquea la entrada: el móvil se queda en negro).
+    Quita también los bloqueos que Windows crea si se canceló su aviso.
+    Pide permiso de administrador una vez."""
+    import os
+    import sys
+    import tempfile
+    exe = sys.executable
+    lines = [
+        '@echo off',
+        f'netsh advfirewall firewall delete rule name=all dir=in program="{exe}" >nul 2>&1',
+        'netsh advfirewall firewall delete rule name="JOSINODJ" >nul 2>&1',
+        f'netsh advfirewall firewall delete rule name="JOSINODJ (puerto {SERVER_PORT})" >nul 2>&1',
+        f'netsh advfirewall firewall add rule name="JOSINODJ" dir=in action=allow '
+        f'program="{exe}" enable=yes profile=any >nul',
+        f'netsh advfirewall firewall add rule name="JOSINODJ (puerto {SERVER_PORT})" dir=in '
+        f'action=allow protocol=TCP localport={SERVER_PORT} enable=yes profile=any >nul',
+    ]
+    bat = os.path.join(tempfile.gettempdir(), 'josinodj_firewall.bat')
+    try:
+        with open(bat, 'w', encoding='mbcs', errors='replace') as f:
+            f.write('\r\n'.join(lines) + '\r\n')
+        ps = (f"Start-Process -FilePath '{bat}' -Verb RunAs -WindowStyle Hidden"
+              + (' -Wait' if wait else ''))
+        r = subprocess.run(['powershell', '-NoProfile', '-Command', ps],
+                           capture_output=True, timeout=120,
+                           creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        return r.returncode == 0
+    except Exception:
+        return False
 
 
 def _has_network() -> bool:
@@ -93,7 +140,12 @@ class MobileDialog(QDialog):
         self.setWindowTitle('Control desde móvil  –  JOSINODJ')
         self.setMinimumWidth(500)
         self.setMaximumWidth(620)
-        self.resize(520, 700)
+        self.resize(520, 760)
+        try:
+            avail = QApplication.primaryScreen().availableGeometry().height()
+            self.resize(520, min(760, avail - 40))
+        except Exception:
+            pass
         self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
         self.setStyleSheet('QDialog{background:#0d0d18;} QLabel{color:#cccccc;}')
         self._hotspot_active = False
@@ -177,7 +229,7 @@ class MobileDialog(QDialog):
 
         self._qr_wifi_url = QLabel()
         self._qr_wifi_url.setAlignment(Qt.AlignCenter)
-        self._qr_wifi_url.setFixedHeight(260)
+        self._qr_wifi_url.setFixedHeight(210)
         self._qr_wifi_url.setStyleSheet('background:white; border-radius:6px; padding:8px;')
         cl.addWidget(self._qr_wifi_url)
 
@@ -188,8 +240,47 @@ class MobileDialog(QDialog):
         self._url_wifi_lbl.setAlignment(Qt.AlignCenter)
         cl.addWidget(self._url_wifi_lbl)
 
+        self._other_ips_lbl = QLabel()
+        self._other_ips_lbl.setStyleSheet('font-size:11px; color:#666688;')
+        self._other_ips_lbl.setAlignment(Qt.AlignCenter)
+        self._other_ips_lbl.setWordWrap(True)
+        self._other_ips_lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        cl.addWidget(self._other_ips_lbl)
+
         vl.addWidget(card)
+
+        # Si en el móvil la página se queda en negro / no carga
+        fix_card = QWidget()
+        fix_card.setStyleSheet(_CARD)
+        fl = QVBoxLayout(fix_card)
+        fl.setContentsMargins(14, 10, 14, 10)
+        fl.setSpacing(6)
+        fix_info = QLabel('¿En el móvil se queda <b>en negro</b>? Pulsa y acepta el aviso de Windows:')
+        fix_info.setTextFormat(Qt.RichText)
+        fix_info.setWordWrap(True)
+        fix_info.setStyleSheet('font-size:11px; color:#888899;')
+        fl.addWidget(fix_info)
+        self._btn_fw = QPushButton('🔓  Permitir conexión del móvil')
+        self._btn_fw.setFixedHeight(32)
+        self._btn_fw.setStyleSheet(
+            'background:#1a2a1a; border:1px solid #3a8a3a;'
+            'border-radius:5px; color:#44ee88; font-weight:600;')
+        self._btn_fw.clicked.connect(self._on_fix_firewall)
+        fl.addWidget(self._btn_fw)
+        vl.insertWidget(0, fix_card)   # arriba: siempre a la vista
+        vl.addStretch(1)
         return w
+
+    def _on_fix_firewall(self):
+        self._btn_fw.setEnabled(False)
+        self._btn_fw.setText('Esperando permiso de Windows…')
+        QApplication.processEvents()
+        ok = fix_firewall(wait=True)
+        self._btn_fw.setEnabled(True)
+        if ok:
+            self._btn_fw.setText('✅  Hecho: recarga la página en el móvil')
+        else:
+            self._btn_fw.setText('🔓  Permitir conexión del móvil  (no se aceptó, reintentar)')
 
     # ── Página modo Hotspot ───────────────────────────────────────────────
 
@@ -289,7 +380,11 @@ class MobileDialog(QDialog):
         url = f'http://{ip}:{SERVER_PORT}'
         self._url_wifi_lbl.setText(url)
         self._status_lbl.setText(f'IP del PC en tu red: {ip}')
-        px = _qr_pixmap(url, 250)
+        others = _other_ips(ip)
+        self._other_ips_lbl.setText(
+            'Si no carga, prueba en el móvil: ' +
+            '  ·  '.join(f'http://{o}:{SERVER_PORT}' for o in others) if others else '')
+        px = _qr_pixmap(url, 200)
         if px:
             self._qr_wifi_url.setPixmap(px)
         else:

@@ -27,6 +27,9 @@ powershell -NoProfile -Command "Remove-Item ([Environment]::GetFolderPath('Deskt
 set "START_MENU=%ProgramData%\Microsoft\Windows\Start Menu\Programs\JOSINODJ"
 if exist "!START_MENU!" rd /s /q "!START_MENU!"
 
+netsh advfirewall firewall delete rule name="JOSINODJ" >nul 2>&1
+netsh advfirewall firewall delete rule name="JOSINODJ (puerto 8080)" >nul 2>&1
+
 echo  Limpiando registro...
 reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\JOSINODJ" /f > nul 2>&1
 
