@@ -26,6 +26,11 @@ class _UpdateChecker(QThread):
 
 
 CHANGELOG = {
+    '2.6.3': (
+        '- Transiciones largas de toda la vida: la que sale baja con filtro y reverb, la que entra sube\n'
+        '- Los graves se cambian a mitad, en el compás, para que no choquen los bombos\n'
+        '- Mezclas con BPM parecido otra vez largas (hasta 32 tiempos, según el crossfade)\n'
+    ),
     '2.6.2': (
         '- Arreglado el error 403 al descargar de YouTube (yt-dlp actualizado)\n'
         '- El descargador de YouTube se actualiza solo y reintenta si una descarga falla\n'

@@ -256,6 +256,7 @@ class Plan:
     beats: int          # duración de la mezcla en beats de A
     rate: float         # velocidad de B durante el blend (1 = natural)
     b_delay: int = 0    # (echo/fade) muestras desde `start` hasta que entra B
+    tail: int = 0       # (echo) muestras de cola de eco tras el corte de A
 
 
 def _grid(info: TrackInfo, b0: int, n: int) -> tuple[float, float]:
@@ -343,8 +344,8 @@ def plan(a: TrackInfo, b: TrackInfo, a_len: int, b_len: int,
         if quick:
             options = (8,)
         else:
-            # Mezclas cortas: 16 tiempos (~7-8 s) como mucho, 8 si va rápido
-            options = [n for n in (16, 8) if n * a_per_s <= min(max(max_blend_s, 6.0), 9.0)] or [8]
+            # Mezcla larga, sin prisas: lo que dé el ajuste de crossfade
+            options = [n for n in (32, 16, 8) if n * a_per_s <= max(max_blend_s, 6.0)] or [8]
         if kd > 1:
             options = [max(8, n // 2) for n in options]
         for n in options:
@@ -373,15 +374,52 @@ def plan(a: TrackInfo, b: TrackInfo, a_len: int, b_len: int,
                 continue
             return Plan('blend', int(round(a0)), ap, b0, bp_eff, n, rate)
 
-    # ── Echo out (ritmo claro en A) o fade ──────────────────────────────
-    if a.salience > 0.1:
-        k0 = pick_start(4)
-        if k0 is not None:
-            a0, ap = _grid(a, k0, 4)
-            b0, bp = _grid(b, b.entry_beat, 4)
-            return Plan('echo', int(round(a0)), ap, b0, bp, 4, 1.0, b_delay=int(round(4 * ap)))
+    # Duración total de la transición (filtro/eco o fundido)
+    T_s = 6.0 if quick else float(np.clip(max_blend_s, 8.0, 18.0))
 
-    fade_s = 3.0 if quick else 5.0
+    # ── Transición de toda la vida, con efectos (BPM incompatibles) ────
+    #   la que sale va bajando de volumen mientras se filtra y se va al
+    #   espacio (reverb); la que entra va subiendo. A mitad (en un "1" de B)
+    #   se cambian los graves para que no choquen los bombos.
+    if a.salience > 0.1:
+        bar_s = 4 * 60.0 / a.bpm
+        pre_bars = max(1, int(round(0.55 * T_s / bar_s)))
+        for pb in range(pre_bars, 0, -1):
+            k0 = pick_start(int(np.ceil(4 * pb / 0.55)))
+            if k0 is None:
+                continue
+            a0, ap = _grid(a, k0, 4 * pb)
+            a0, _ = _refine(a, a0, ap, 4 * pb)
+            a0 = max(float(earliest), a0)
+            pre = int(round(4 * pb * ap))
+            tail = int(round(pre / 0.55 - pre + _REV_TAIL * SR))
+            # B: que uno de sus "1" caiga justo en el corte de A
+            if len(b.beats):
+                _, bp = _grid(b, b.entry_beat, 16)
+                # El corte de A cae en un "1" de B donde B ya suena con fuerza
+                # (su intro suena por debajo durante la entrada, como un DJ)
+                downs = [j for j in range(b.entry_beat, min(len(b.beats) - 8, b.entry_beat + 65), 4)]
+                e = b.energy
+                full = 0.75 * float(np.median(e)) if len(e) else 0.0
+
+                def strong(j):
+                    # fuerte desde el primer golpe y durante los 2 compases siguientes
+                    return (len(e) > j + 8 and float(np.min(e[j:j + 2])) >= full
+                            and float(np.mean(e[j:j + 8])) >= full)
+
+                j = next((j for j in downs if b.beats[j] >= 0.5 * pre and strong(j)), None)
+                if j is None:
+                    j = next((j for j in downs if b.beats[j] >= 0.75 * pre),
+                             downs[-1] if downs else 0)
+                dn = float(b.beats[j]) if downs else float(pre)
+            else:
+                bp, dn = ap, float(pre)
+            if dn - pre + pre + tail >= b_len:
+                continue
+            return Plan('echo', int(round(a0)), ap, dn - pre, bp, 4 * pb, 1.0,
+                        b_delay=pre, tail=tail)
+
+    fade_s = min(T_s, 5.0) if quick else min(T_s, 14.0)
     fade = int(fade_s * SR)
     if quick:
         start = max(earliest, 0)
@@ -600,66 +638,117 @@ def _stretch_marks(b: np.ndarray, in_m: np.ndarray, out_m: np.ndarray) -> np.nda
             res[o0:o1] = seg
     return res[:total]
 
+_REV_TAIL = 2.5          # s de cola de reverb tras apagarse la saliente
+_IR = None
+
+
+def _reverb_ir() -> np.ndarray:
+    """Respuesta de una sala grande (≈2.4 s), estéreo, algo oscura."""
+    global _IR
+    if _IR is None:
+        from scipy.signal import butter, sosfilt
+        rng = np.random.default_rng(7)
+        n = int(_REV_TAIL * SR)
+        t = np.arange(n) / SR
+        env = np.exp(-6.9 * t / 2.4)                  # RT60 ≈ 2.4 s
+        ir = rng.standard_normal((n, 2)) * env[:, None]
+        sos = butter(2, 5000, btype='low', fs=SR, output='sos')
+        ir = sosfilt(sos, ir, axis=0)
+        ir[:int(0.02 * SR)] = 0                       # pre-delay 20 ms
+        ir /= np.sqrt(np.sum(ir ** 2, axis=0, keepdims=True))
+        _IR = ir.astype(np.float32)
+    return _IR
+
+
+def _reverb(x: np.ndarray) -> np.ndarray:
+    from scipy.signal import fftconvolve
+    ir = _reverb_ir()
+    m = x.mean(axis=1)
+    out = np.stack([fftconvolve(m, ir[:, c])[:len(x)] for c in range(2)], axis=1)
+    return out.astype(np.float32)
+
+
+_SWEEP_FC = (0, 50, 90, 150, 250, 400, 650, 1000, 1600, 2500)
+
+
+def _hp_bank(x: np.ndarray, top: int) -> list:
+    """Versiones de x con filtro paso-alto a frecuencias crecientes (fase cero,
+    así se pueden fundir entre ellas sin efecto peine)."""
+    from scipy.signal import butter, sosfiltfilt
+    bank = [x]
+    for fc in _SWEEP_FC[1:top + 1]:
+        sos = butter(2, fc, btype='high', fs=SR, output='sos')
+        bank.append(sosfiltfilt(sos, x, axis=0).astype(np.float32))
+    return bank
+
+
+def _hp_sweep(x: np.ndarray, pos: np.ndarray) -> np.ndarray:
+    """Filtro paso-alto que se mueve: pos (por muestra) es el índice en
+    _SWEEP_FC (0 = sin filtro, 9 = 2.5 kHz), con valores intermedios."""
+    pos = np.clip(pos, 0, len(_SWEEP_FC) - 1)
+    top = int(np.ceil(pos.max()))
+    if top == 0:
+        return x.copy()
+    bank = _hp_bank(x, top)
+    out = np.zeros_like(x)
+    for i in range(top + 1):
+        w = np.clip(1 - np.abs(pos - i), 0, 1).astype(np.float32)
+        if w.any():
+            out += bank[i] * w[:, None]
+    return out
+
+
+def _seg(x: np.ndarray, start: int, n: int, gain: float) -> np.ndarray:
+    """x[start:start+n] * gain, rellenando con silencio fuera de rango."""
+    out = np.zeros((n, 2), dtype=np.float32)
+    s0, s1 = max(0, start), min(len(x), start + n)
+    if s1 > s0:
+        out[s0 - start:s1 - start] = x[s0:s1] * gain
+    return out
+
+
+def _render_space(a, b, ga, gb, a_start: int, b_start: int, T: int, swap: int, xf: int):
+    """Transición clásica con efectos, durante T muestras (+ cola de reverb):
+    - la que sale baja de volumen poco a poco, con filtro paso-alto subiendo
+      y cada vez más reverb (se va "al espacio"); la reverb se apaga sola
+    - la que entra sube de volumen poco a poco; sus graves entran en `swap`
+      (a la vez que se van los de la saliente)"""
+    L = T + int(_REV_TAIL * SR)
+    t = np.arange(L, dtype=np.float64)
+
+    # ── Saliente ────────────────────────────────────────────────────────
+    aseg = _seg(a, a_start, T, ga)
+    ta = t[:T]
+    # filtro: quita graves hasta el cambio (~250 Hz) y luego sigue subiendo
+    a_pos = 4.2 * _ramp(ta, 0.1 * T, swap) + 2.3 * _ramp(ta, swap, T)
+    a_f = _hp_sweep(aseg, a_pos)
+    vol_a = np.cos(np.pi / 2 * _ramp(ta, 0.25 * T, T)) ** 2      # baja poco a poco
+    send = 0.15 + 0.85 * _ramp(ta, 0.2 * T, 0.85 * T)             # cada vez más espacio
+    dry = np.zeros((L, 2), dtype=np.float32)
+    dry[:T] = a_f * (vol_a * (1 - 0.45 * send))[:, None]
+    wet_in = np.zeros((L, 2), dtype=np.float32)
+    wet_in[:T] = a_f * (np.sqrt(vol_a) * send)[:, None]
+    wet = _reverb(wet_in) * 0.55
+
+    # ── Entrante ────────────────────────────────────────────────────────
+    bseg = _seg(b, b_start, L, gb)
+    b_lo, b_hi = _split(bseg, 200.0)
+    vol_b = np.sin(np.pi / 2 * _ramp(t, 0.0, 0.7 * T)) ** 2      # sube poco a poco
+    in_lo = _ramp(t, swap, swap + xf)
+
+    mix = dry + wet + b_lo * (vol_b * in_lo)[:, None] + b_hi * vol_b[:, None]
+    return _soft_limit(mix.astype(np.float32)), b_start + L
+
 
 def _render_echo(a, b, ga, gb, p: Plan):
-    bar = int(round(4 * p.a_period))
-    beat = p.a_period
-    tail_beats = 8
-    T = int(round(tail_beats * beat))
-    L = bar + T
-    t = np.arange(L, dtype=np.float64)
-    bt = t / beat
-
-    aseg = np.zeros((L, 2), dtype=np.float32)
-    an = max(0, min(bar, len(a) - p.start))
-    aseg[:an] = a[p.start:p.start + an] * ga
-    a_lo, a_hi = _split(aseg)
-    # Durante el compás de salida se le van los graves
-    lo_env = 1 - _ramp(bt, 1.0, 3.5)
-    dry = a_lo * lo_env[:, None] + a_hi
-    dry[bar:] = 0
-    # Eco a tempo (medio beat) sobre el último beat, sin graves
-    src = np.zeros_like(aseg)
-    s0 = int(round(3 * beat))
-    src[s0:bar] = a_hi[s0:bar]
-    d = int(round(beat / 2))
-    echo = np.zeros_like(aseg)
-    g = 0.6
-    k = 1
-    while g > 0.03 and k * d < L:
-        sh = k * d
-        echo[sh:] += src[:L - sh] * g
-        g *= 0.6
-        k += 1
-    echo[:bar] *= 0.5
-
-    # B entra limpia en el "1" siguiente, a su tempo
-    bstart = max(0, int(round(p.b_start)))
-    bseg = np.zeros((L, 2), dtype=np.float32)
-    bn = max(0, min(T, len(b) - bstart))
-    bseg[bar:bar + bn] = b[bstart:bstart + bn] * gb
-    fade_in = _ramp(t, bar, bar + 0.02 * SR)
-    mix = dry + echo + bseg * fade_in[:, None]
-    return _soft_limit(mix.astype(np.float32)), bstart + T
+    """BPM incompatibles con ritmo: los graves se cambian en un "1" de B."""
+    T = p.b_delay + p.tail - int(_REV_TAIL * SR)
+    return _render_space(a, b, ga, gb, p.start, int(round(p.b_start)), T,
+                         p.b_delay, int(round(p.a_period / 8)))
 
 
 def _render_fade(a, b, ga, gb, p: Plan):
+    """Temas sin ritmo claro: lo mismo, con el cambio de graves a mitad."""
     F = int(round(p.beats * p.a_period))
-    t = np.arange(F, dtype=np.float64)
-    aseg = np.zeros((F, 2), dtype=np.float32)
-    an = max(0, min(F, len(a) - p.start))
-    aseg[:an] = a[p.start:p.start + an] * ga
     bstart = max(0, int(round(p.b_start)))
-    bseg = np.zeros((F, 2), dtype=np.float32)
-    bn = max(0, min(F, len(b) - bstart))
-    bseg[:bn] = b[bstart:bstart + bn] * gb
-    a_lo, a_hi = _split(aseg)
-    b_lo, b_hi = _split(bseg)
-    x = t / F
-    out_hi = np.cos(np.pi / 2 * _ramp(x, 0.0, 1.0)) ** 2
-    in_hi = np.sin(np.pi / 2 * _ramp(x, 0.0, 0.8)) ** 2
-    in_lo = _ramp(x, 0.45, 0.6)
-    out_lo = 1 - in_lo
-    mix = (a_lo * out_lo[:, None] + a_hi * out_hi[:, None]
-           + b_lo * in_lo[:, None] + b_hi * in_hi[:, None])
-    return _soft_limit(mix.astype(np.float32)), bstart + F
+    return _render_space(a, b, ga, gb, p.start, bstart, F, int(0.5 * F), int(0.15 * F))
