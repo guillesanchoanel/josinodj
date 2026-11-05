@@ -343,7 +343,8 @@ def plan(a: TrackInfo, b: TrackInfo, a_len: int, b_len: int,
         if quick:
             options = (8,)
         else:
-            options = [n for n in (32, 16, 8) if n * a_per_s <= max(max_blend_s, 6.0)] or [8]
+            # Mezclas cortas: 16 tiempos (~7-8 s) como mucho, 8 si va rápido
+            options = [n for n in (16, 8) if n * a_per_s <= min(max(max_blend_s, 6.0), 9.0)] or [8]
         if kd > 1:
             options = [max(8, n // 2) for n in options]
         for n in options:
@@ -380,7 +381,7 @@ def plan(a: TrackInfo, b: TrackInfo, a_len: int, b_len: int,
             b0, bp = _grid(b, b.entry_beat, 4)
             return Plan('echo', int(round(a0)), ap, b0, bp, 4, 1.0, b_delay=int(round(4 * ap)))
 
-    fade_s = 4.0 if quick else 8.0
+    fade_s = 3.0 if quick else 5.0
     fade = int(fade_s * SR)
     if quick:
         start = max(earliest, 0)

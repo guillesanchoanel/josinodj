@@ -26,6 +26,10 @@ class _UpdateChecker(QThread):
 
 
 CHANGELOG = {
+    '2.6.1': (
+        '- Mezclas más cortas: como mucho 16 tiempos (~7-8 s) con BPM parecido, 8 si el tono no pega\n'
+        '- Fundido de 5 s (3 s al cambiar a mano)\n'
+    ),
     '2.6.0': (
         '- Mezcla DJ inteligente: analiza golpes, compases, frases, tempo y tono de cada canción\n'
         '- Beatmatching con key-lock (Rubber Band): la entrante se cuadra al golpe sin cambiar el tono de la voz\n'
