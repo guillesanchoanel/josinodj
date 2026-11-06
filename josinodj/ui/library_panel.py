@@ -346,18 +346,18 @@ class LibraryPanel(QWidget):
     # ── Search + count ────────────────────────────────────────────────────
 
     def _filter(self, text: str):
-        text = text.lower().strip()
+        from josinodj.utils.textnorm import haystack, matches, norm
+        text = text.strip()
+        empty = not norm(text)
         for row in range(self._table.rowCount()):
             item = self._table.item(row, 0)
             if item is None:
                 continue
             t: Track = item.data(Qt.UserRole)
-            folder_name = os.path.basename(os.path.dirname(t.path)).lower()
-            match = (not text
-                     or text in t.title.lower()
-                     or text in t.artist.lower()
-                     or text in t.album.lower()
-                     or text in folder_name)
+            folder_name = os.path.basename(os.path.dirname(t.path))
+            match = empty or matches(text, haystack(
+                t.title, t.artist, t.album, folder_name,
+                os.path.splitext(os.path.basename(t.path))[0]))
             self._table.setRowHidden(row, not match)
         self._update_count()
 

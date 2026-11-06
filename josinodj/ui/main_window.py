@@ -858,9 +858,11 @@ class MainWindow(QMainWindow):
 
             return
 
-        self._preloaded_path = tracks[nxt].path
 
-        self._engine.preload_next_async(tracks[nxt].path)
+
+        if self._engine.preload_next_async(tracks[nxt].path) is False:
+            return              # hay una transicion sonando: se reintenta luego
+        self._preloaded_path = tracks[nxt].path
 
         self._preload_done = True
 

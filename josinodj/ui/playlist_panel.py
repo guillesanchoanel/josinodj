@@ -818,14 +818,13 @@ class PlaylistPanel(QWidget):
             self._table.setRowHeight(row, row_h)
 
     def _filter_table(self, text: str):
-        text = text.lower().strip()
+        from josinodj.utils.textnorm import haystack, matches, norm
+        empty = not norm(text)
         for row in range(self._model.rowCount()):
             track = self._model.tracks[row]
-            match = (not text
-                     or text in track.title.lower()
-                     or text in track.artist.lower()
-                     or text in track.album.lower()
-                     or text in track.genre.lower())
+            match = empty or matches(text, haystack(
+                track.title, track.artist, track.album, track.genre,
+                os.path.splitext(os.path.basename(track.path))[0]))
             self._table.setRowHidden(row, not match)
 
     def _update_status(self):

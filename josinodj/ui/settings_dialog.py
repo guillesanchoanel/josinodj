@@ -24,6 +24,12 @@ class _UpdateChecker(QThread):
 
 
 CHANGELOG = {
+    '2.6.7': (
+        '- Transiciones: arreglado que la canción que entra se cortara y volviera a empezar (crossfades largos)\n'
+        '- Transiciones: reverb más marcada en la que sale\n'
+        '- Transiciones: la que entra empieza suave y apagada y el filtro se va abriendo hasta sonar normal\n'
+        '- Buscadores: ignoran tildes, mayúsculas y símbolos, y las palabras pueden ir en cualquier orden\n'
+    ),
     '2.6.6': (
         '- Actualizaciones: ya no fallan con datos del móvil, red lenta o Windows sin certificados\n'
         '- Ajustes > Versión: botón Instalar ahora cuando hay versión nueva\n'

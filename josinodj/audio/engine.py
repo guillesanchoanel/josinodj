@@ -83,6 +83,7 @@ class AudioEngine(QObject):
         self._mix_busy   = False     # hilo preparando una transicion
         self._mix_gen    = 0
         self.smart_mix   = True
+        self._mix_failed = False     # la mezcla DJ no se pudo preparar -> fundido simple
 
         self._ticker = QTimer()
         self._ticker.timeout.connect(self._tick)
@@ -308,6 +309,10 @@ class AudioEngine(QObject):
                     self._current_gain       = self._next_gain
                     self._next_gain          = 1.0
                     self._pending_switch     = True
+                    self._cur_path  = self._next_path or self._cur_path
+                    self._next_path = ''
+                    self._info_cur  = None
+                    self._mix_failed = False
             else:
                 # Current track ran out (or cf_samples=0) → switch immediately to next
                 self._current      = self._next
@@ -327,6 +332,10 @@ class AudioEngine(QObject):
                 self._current_gain       = self._next_gain
                 self._next_gain          = 1.0
                 self._pending_switch     = True
+                self._cur_path  = self._next_path or self._cur_path
+                self._next_path = ''
+                self._info_cur  = None
+                self._mix_failed = False
                 # Fill outdata from the new current track
                 rem2 = self._current_len - self._current_pos
                 rd2  = min(frames, rem2)
@@ -357,9 +366,11 @@ class AudioEngine(QObject):
                     self._pending_end = True
 
             if (self._next is not None and not self._crossfading
-                    and self._mix is None and not self._mix_busy):
+                    and self._mix is None):
                 samples_left = self._current_effective_end - self._current_pos
-                if samples_left <= self._cf_samples:
+                dj_waiting = self.smart_mix and not self._mix_failed
+                limit = min(self._cf_samples, 3 * self._sr) if dj_waiting else self._cf_samples
+                if samples_left <= limit:
                     # Clamp actual CF duration — never touch _cf_samples (user-set value)
                     self._cf_samples_actual = max(1, samples_left)
                     self._crossfading = True
@@ -394,6 +405,9 @@ class AudioEngine(QObject):
         """Si toca (o esta en curso) una transicion preparada, la reproduce."""
         m = self._mix
         if m is None:
+            return False
+        if self._crossfading and not self._mixing:
+            self._mix = None
             return False
         if not self._mixing:
             if m['cur'] is not self._current:
@@ -505,6 +519,8 @@ class AudioEngine(QObject):
             eff_end = b_eff_end or (self._next_effective_end if b is self._next else 0)
             if not eff_end and ib is not None and 0 <= ib.last_beat < len(ib.beats):
                 eff_end = int(ib.beats[ib.last_beat])
+            if self._crossfading:
+                return False            # ya va el fundido simple: no pisarlo
             self._mix = dict(cur=a, start=plan.start, buf=buf, resume=resume, next=b,
                              gain=gb, eff_end=eff_end, path=path, info=ib,
                              peaks=b_peaks if b_peaks is not None else self._switch_peaks,
@@ -520,6 +536,8 @@ class AudioEngine(QObject):
         finally:
             if gen == self._mix_gen:
                 self._mix_busy = False
+                if self._mix is None and not self._mixing:
+                    self._mix_failed = True
 
     def mix_to(self, path: str):
         """Cambio de cancion a mano mientras suena: mezcla en el siguiente compas
@@ -641,6 +659,7 @@ class AudioEngine(QObject):
         self._mix = None
         self._mixing = False
         self._mix_busy = False
+        self._mix_failed = False
         self._cur_path = path
         self._info_cur = None
         self._playing = True
@@ -661,18 +680,21 @@ class AudioEngine(QObject):
         return True
 
     def preload_next_async(self, path: str):
+        if self._crossfading or self._mixing:
+            return False                # la transicion en curso manda
         self._preload_gen += 1
         self._mix_gen += 1
-        if not self._mixing:
-            self._mix = None
+        self._mix = None
+        self._mix_failed = False
         self._next_path = path
         threading.Thread(target=self._preload_worker, args=(path, self._preload_gen), daemon=True).start()
+        return True
 
     def _preload_worker(self, path: str, gen: int):
         try:
             data = self._decode(path)
             # Abort if play_file was called while we were decoding
-            if gen != self._preload_gen:
+            if gen != self._preload_gen or self._crossfading or self._mixing:
                 return
             self._next               = data
             self._next_pos           = 0

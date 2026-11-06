@@ -196,8 +196,12 @@ _HTML = """<!DOCTYPE html>
   var _dg={el:null,ghost:null,fromIdx:-1,toIdx:-1,itemH:0};
   var _scrollTimer=null;
 
+  function _norm(s){
+    s=(s||'').normalize('NFKD').replace(/[̀-ͯ]/g,'').toLowerCase();
+    return s.replace(/[^0-9a-z]+/g,' ').trim();
+  }
   function onSearch(q){
-    _searchQ=q.trim().toLowerCase();
+    _searchQ=_norm(q);
     applySearch();
   }
 
@@ -207,9 +211,9 @@ _HTML = """<!DOCTYPE html>
     items.forEach(function(item,i){
       var t=_plData[i];
       if(!t){item.style.display='none';return;}
-      var match=!q
-        ||(t.title||'').toLowerCase().indexOf(q)>=0
-        ||(t.artist||'').toLowerCase().indexOf(q)>=0;
+      var h=_norm((t.title||'')+' '+(t.artist||''));
+      h=h+' | '+h.replace(/ /g,'');
+      var match=!q||q.split(' ').every(function(w){return h.indexOf(w)>=0;});
       item.style.display=match?'':'none';
       if(match) found++;
     });

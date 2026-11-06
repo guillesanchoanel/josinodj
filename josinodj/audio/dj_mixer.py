@@ -521,8 +521,17 @@ def _render_blend(a, b, ga, gb, p: Plan):
     out_hi = np.cos(np.pi / 2 * _ramp(beat, half, N)) ** 2
     # La entrante algo más baja de medios/agudos al principio (hueco para la saliente)
     in_hi = in_hi * (0.8 + 0.2 * _ramp(beat, half - 2, half))
+    # la entrante empieza apagada (filtro) y se abre hasta neutro
+    b_hi = _lp_sweep(b_hi, 6.0 * (1 - _ramp(beat, 0, half + (N - half) * 0.5)))
 
-    mix = (a_lo * out_lo[:, None] + a_hi * out_hi[:, None]
+    # Efectos en la saliente (segunda mitad): filtro paso-alto que sube y se
+    # va al espacio con reverb; la cola se apaga antes de acabar el tramo
+    a_hi_f = _hp_sweep(a_hi, 5.5 * _ramp(beat, half, N))           # hasta ~500 Hz
+    send = _ramp(beat, half * 0.6, N)
+    wet = _reverb(a_hi_f * (send * np.sqrt(out_hi))[:, None]) * 1.0
+    end_b = N + (min(8, (len(t) / p.a_period) - N - 0.5))
+    wet *= (1 - _ramp(beat, N, max(N + 0.5, end_b)))[:, None]
+    mix = (a_lo * out_lo[:, None] + a_hi_f * out_hi[:, None] + wet
            + b_lo * in_lo[:, None] + b_hi * in_hi[:, None])
     _render_blend.last_align = _grid_align(b_lo, p.a_period, N)
     return _soft_limit(mix.astype(np.float32)), resume
@@ -648,23 +657,23 @@ def _stretch_marks(b: np.ndarray, in_m: np.ndarray, out_m: np.ndarray) -> np.nda
             res[o0:o1] = seg
     return res[:total]
 
-_REV_TAIL = 2.5          # s de cola de reverb tras apagarse la saliente
+_REV_TAIL = 3.5          # s de cola de reverb tras apagarse la saliente
 _IR = None
 
 
 def _reverb_ir() -> np.ndarray:
-    """Respuesta de una sala grande (≈2.4 s), estéreo, algo oscura."""
+    """Respuesta de una sala muy grande (≈3.3 s), estéreo, algo oscura."""
     global _IR
     if _IR is None:
         from scipy.signal import butter, sosfilt
         rng = np.random.default_rng(7)
         n = int(_REV_TAIL * SR)
         t = np.arange(n) / SR
-        env = np.exp(-6.9 * t / 2.4)                  # RT60 ≈ 2.4 s
+        env = np.exp(-6.9 * t / 3.3)                  # RT60 ≈ 3.3 s
         ir = rng.standard_normal((n, 2)) * env[:, None]
         sos = butter(2, 5000, btype='low', fs=SR, output='sos')
         ir = sosfilt(sos, ir, axis=0)
-        ir[:int(0.02 * SR)] = 0                       # pre-delay 20 ms
+        ir[:int(0.04 * SR)] = 0                       # pre-delay 40 ms
         ir /= np.sqrt(np.sum(ir ** 2, axis=0, keepdims=True))
         _IR = ir.astype(np.float32)
     return _IR
@@ -708,6 +717,41 @@ def _hp_sweep(x: np.ndarray, pos: np.ndarray) -> np.ndarray:
     return out
 
 
+_LP_FC = (0, 9000, 5500, 3500, 2300, 1500, 1000, 700)
+
+
+def _lp_sweep(x: np.ndarray, pos: np.ndarray) -> np.ndarray:
+    """Filtro paso-bajo que se mueve: pos 0 = neutro, 7 = muy apagado (700 Hz).
+    La entrante empieza sonando lejana y suave y se va abriendo."""
+    from scipy.signal import butter, sosfiltfilt
+    pos = np.clip(pos, 0, len(_LP_FC) - 1)
+    top = int(np.ceil(pos.max()))
+    if top == 0:
+        return x.copy()
+    out = np.zeros_like(x)
+    for i in range(top + 1):
+        w = np.clip(1 - np.abs(pos - i), 0, 1).astype(np.float32)
+        if not w.any():
+            continue
+        nz = np.nonzero(w)[0]
+        a0, a1 = max(0, nz[0] - SR // 2), min(len(x), nz[-1] + 1 + SR // 2)
+        if i == 0:
+            y = x[a0:a1]
+        else:
+            sos = butter(2, _LP_FC[i], btype='low', fs=SR, output='sos')
+            y = sosfiltfilt(sos, x[a0:a1], axis=0).astype(np.float32)
+        out[a0:a1] += y * w[a0:a1, None]
+    return out
+
+
+def _fade_in_db(t: np.ndarray, t0: float, t1: float, floor_db: float = -26.0) -> np.ndarray:
+    """Subida de volumen "de oído": empieza muy bajita, va subiendo suave y
+    llega a volumen normal en t1 (lineal en dB, que es como lo percibimos)."""
+    r = _ramp(t, t0, t1)
+    g = 10 ** (floor_db * (1 - r) / 20)
+    return (g * _ramp(t, t0, t0 + 0.08 * (t1 - t0))).astype(np.float32)
+
+
 def _seg(x: np.ndarray, start: int, n: int, gain: float) -> np.ndarray:
     """x[start:start+n] * gain, rellenando con silencio fuera de rango."""
     out = np.zeros((n, 2), dtype=np.float32)
@@ -730,21 +774,26 @@ def _render_space(a, b, ga, gb, a_start: int, b_start: int, T: int, swap: int, x
     aseg = _seg(a, a_start, T, ga)
     ta = t[:T]
     # filtro: quita graves hasta el cambio (~250 Hz) y luego sigue subiendo
-    a_pos = 4.2 * _ramp(ta, 0.1 * T, swap) + 2.3 * _ramp(ta, swap, T)
+    a_pos = 4.2 * _ramp(ta, 0.1 * T, swap) + 3.3 * _ramp(ta, swap, T)   # hasta ~1 kHz
     a_f = _hp_sweep(aseg, a_pos)
     vol_a = np.cos(np.pi / 2 * _ramp(ta, 0.25 * T, T)) ** 2      # baja poco a poco
-    send = _ramp(ta, 0.1 * T, 0.85 * T)                           # cada vez más espacio (desde 0: sin saltos)
+    send = _ramp(ta, 0.05 * T, 0.7 * T)                           # cada vez más espacio (desde 0: sin saltos)
     dry = np.zeros((L, 2), dtype=np.float32)
-    dry[:T] = a_f * (vol_a * (1 - 0.45 * send))[:, None]
+    dry[:T] = a_f * (vol_a * (1 - 0.6 * send))[:, None]
     wet_in = np.zeros((L, 2), dtype=np.float32)
     wet_in[:T] = a_f * (np.sqrt(vol_a) * send)[:, None]
-    wet = _reverb(wet_in) * 0.55
 
     # ── Entrante ────────────────────────────────────────────────────────
     bseg = _seg(b, b_start, L, gb)
     b_lo, b_hi = _split(bseg, 200.0)
-    vol_b = np.sin(np.pi / 2 * _ramp(t, 0.0, 0.7 * T)) ** 2      # sube poco a poco
+    # filtro apagado que se va abriendo hasta quedar neutro
+    b_hi = _lp_sweep(b_hi, 7.0 * (1 - _ramp(t, 0.05 * T, 0.9 * T)))
+    vol_b = _fade_in_db(t, 0.0, 0.85 * T)                         # muy suave → volumen normal
     in_lo = _ramp(t, swap, swap + xf)
+    # al principio la entrante también llega "desde lejos" (con reverb)
+    b_send = 1 - _ramp(t, 0.2 * T, 0.75 * T)
+    wet_in += b_hi * (vol_b * b_send * 0.6)[:, None]
+    wet = _reverb(wet_in) * 1.15
 
     mix = dry + wet + b_lo * (vol_b * in_lo)[:, None] + b_hi * vol_b[:, None]
     return _soft_limit(mix.astype(np.float32)), b_start + L
