@@ -344,7 +344,14 @@ class PlaylistPanel(QWidget):
         self._sort_col   = -1
         self._sort_order = Qt.AscendingOrder
         self._model = PlaylistModel()
-        self._model.set_visible_columns(settings.get('visible_columns', ['title', 'artist', 'bpm', 'key', 'duration']))
+        visible = list(settings.get('visible_columns', ['title', 'artist', 'bpm', 'key', 'duration']))
+        if not settings.get('folder_column_added', False):
+            # Nueva columna "Carpeta": activarla una vez en configuraciones antiguas
+            if 'folder' not in visible:
+                visible.append('folder')
+                settings.set('visible_columns', visible)
+            settings.set('folder_column_added', True)
+        self._model.set_visible_columns(visible)
         self._bpm_analyzer = _BpmAnalyzer(self)
         self._bpm_analyzer.bpm_ready.connect(self._on_bpm_ready)
         self._model.rowsInserted.connect(self._on_rows_inserted)

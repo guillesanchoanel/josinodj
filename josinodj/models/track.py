@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 import os
+from functools import lru_cache
 
 
 AUDIO_EXTENSIONS = {
@@ -20,9 +21,10 @@ AUDIO_EXTENSIONS = {
     '.mid', '.midi',             # MIDI
 }
 
-COLUMN_KEYS = ['title', 'artist', 'album', 'genre', 'year', 'bpm', 'key', 'duration', 'bitrate', 'date_added']
+COLUMN_KEYS = ['title', 'folder', 'artist', 'album', 'genre', 'year', 'bpm', 'key', 'duration', 'bitrate', 'date_added']
 COLUMN_LABELS = {
     'title': 'Título',
+    'folder': 'Carpeta',
     'artist': 'Artista',
     'album': 'Álbum',
     'genre': 'Género',
@@ -35,6 +37,7 @@ COLUMN_LABELS = {
 }
 COLUMN_WIDTHS = {
     'title': 240,
+    'folder': 130,
     'artist': 160,
     'album': 140,
     'genre': 90,
@@ -45,6 +48,20 @@ COLUMN_WIDTHS = {
     'bitrate': 75,
     'date_added': 90,
 }
+
+
+@lru_cache(maxsize=4096)
+def _real_folder_name(dir_path: str) -> str:
+    """Nombre de la carpeta con sus mayúsculas reales (el path está en normcase)."""
+    name = os.path.basename(dir_path)
+    parent = os.path.dirname(dir_path)
+    try:
+        for entry in os.scandir(parent):
+            if entry.name.lower() == name.lower():
+                return entry.name
+    except OSError:
+        pass
+    return name
 
 
 @dataclass
@@ -89,6 +106,11 @@ class Track:
     @property
     def bitrate_str(self) -> str:
         return f'{self.bitrate // 1000}k' if self.bitrate else ''
+
+    @property
+    def folder(self) -> str:
+        """Nombre de la carpeta que contiene la canción (p.ej. el estilo)."""
+        return _real_folder_name(os.path.dirname(self.path))
 
     @property
     def extension(self) -> str:

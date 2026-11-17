@@ -9,7 +9,7 @@ DEFAULT_SETTINGS = {
     'master_device': None,
     'cue_device': None,
     'music_folders': [],
-    'visible_columns': ['title', 'artist', 'bpm', 'key', 'duration', 'genre'],
+    'visible_columns': ['title', 'folder', 'artist', 'bpm', 'key', 'duration', 'genre'],
     'auto_play': True,
     'last_playlist_path': '',
     'window_width': 1280,
