@@ -24,6 +24,9 @@ class _UpdateChecker(QThread):
 
 
 CHANGELOG = {
+    '2.6.8': (
+        '- Lista principal: nueva columna Carpeta para ver de qué estilo es cada canción (se puede ordenar por ella)\n'
+    ),
     '2.6.7': (
         '- Transiciones: arreglado que la canción que entra se cortara y volviera a empezar (crossfades largos)\n'
         '- Transiciones: reverb más marcada en la que sale\n'
